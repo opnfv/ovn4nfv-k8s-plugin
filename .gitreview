@@ -1,0 +1,4 @@
+[gerrit]
+host=gerrit.opnfv.org
+port=29418
+project=ovn4nfv-k8s-plugin

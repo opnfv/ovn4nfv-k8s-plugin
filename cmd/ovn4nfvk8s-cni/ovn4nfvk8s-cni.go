@@ -20,7 +20,6 @@ import (
 	"github.com/containernetworking/cni/pkg/version"
 	"k8s.io/apimachinery/pkg/util/wait"
 
-	kexec "k8s.io/utils/exec"
 	"ovn4nfv-k8s-plugin/internal/pkg/kube"
 
 	"ovn4nfv-k8s-plugin/cmd/ovn4nfvk8s-cni/app"
@@ -269,9 +268,8 @@ func main() {
 	c.Version = "0.0.2"
 	c.Flags = config.Flags
 
-	exec := kexec.New()
 	c.Action = func(ctx *cli.Context) error {
-		if _, err := config.InitConfig(ctx, exec, nil); err != nil {
+		if _, err := config.InitConfig(ctx); err != nil {
 			return err
 		}
 

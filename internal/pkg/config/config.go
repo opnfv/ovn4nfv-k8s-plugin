@@ -2,28 +2,21 @@ package config
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	gcfg "gopkg.in/gcfg.v1"
 
-	kexec "k8s.io/utils/exec"
-
-	"k8s.io/client-go/kubernetes"
+       "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/util/cert"
 )
 
 // The following are global config parameters that other modules may access directly
 var (
-	// ovn-kubernetes version, to be changed with every release
-	Version = "0.3.0"
 
 	// Default holds parsed config file parameters and command-line overrides
 	Default = DefaultConfig{
@@ -42,10 +35,8 @@ var (
 		Plugin:  "ovn4nfvk8s-cni",
 	}
 
-	// Kubernetes holds Kubernetes-related parsed config file parameters and command-line overrides
-	Kubernetes = KubernetesConfig{
-		APIServer: "http://localhost:8080",
-	}
+	// Kubernetes holds Kubernetes-related parsed config file parameters
+	Kubernetes = KubernetesConfig{}
 )
 
 // DefaultConfig holds parsed config file parameters and command-line overrides
@@ -73,9 +64,6 @@ type CNIConfig struct {
 // KubernetesConfig holds Kubernetes-related parsed config file parameters and command-line overrides
 type KubernetesConfig struct {
 	Kubeconfig string `gcfg:"kubeconfig"`
-	CACert     string `gcfg:"cacert"`
-	APIServer  string `gcfg:"apiserver"`
-	Token      string `gcfg:"token"`
 }
 
 // Config is used to read the structured config file and to cache config in testcases
@@ -164,57 +152,21 @@ var Flags = []cli.Flag{
 	// Kubernetes-related options
 	cli.StringFlag{
 		Name:        "k8s-kubeconfig",
-		Usage:       "absolute path to the Kubernetes kubeconfig file (not required if the --k8s-apiserver, --k8s-ca-cert, and --k8s-token are given)",
+		Usage:       "absolute path to the Kubernetes kubeconfig file",
 		Destination: &cliConfig.Kubernetes.Kubeconfig,
 	},
-	cli.StringFlag{
-		Name:        "k8s-apiserver",
-		Usage:       "URL of the Kubernetes API server (not required if --k8s-kubeconfig is given) (default: http://localhost:8443)",
-		Destination: &cliConfig.Kubernetes.APIServer,
-	},
-	cli.StringFlag{
-		Name:        "k8s-cacert",
-		Usage:       "the absolute path to the Kubernetes API CA certificate (not required if --k8s-kubeconfig is given)",
-		Destination: &cliConfig.Kubernetes.CACert,
-	},
-	cli.StringFlag{
-		Name:        "k8s-token",
-		Usage:       "the Kubernetes API authentication token (not required if --k8s-kubeconfig is given)",
-		Destination: &cliConfig.Kubernetes.Token,
-	},
 }
 
-type Defaults struct {
-	K8sAPIServer bool
-	K8sToken     bool
-	K8sCert      bool
-}
-
-const (
-	ovsVsctlCommand = "ovs-vsctl"
-)
-
-func buildKubernetesConfig(exec kexec.Interface, cli, file *config, defaults *Defaults) error {
+func buildKubernetesConfig(cli, file *config) error {
 
 	// Copy config file values over default values
 	overrideFields(&Kubernetes, &file.Kubernetes)
 	// And CLI overrides over config file and default values
 	overrideFields(&Kubernetes, &cli.Kubernetes)
 
-	if Kubernetes.Kubeconfig != "" && !pathExists(Kubernetes.Kubeconfig) {
+	if Kubernetes.Kubeconfig == "" || !pathExists(Kubernetes.Kubeconfig) {
 		return fmt.Errorf("kubernetes kubeconfig file %q not found", Kubernetes.Kubeconfig)
 	}
-	if Kubernetes.CACert != "" && !pathExists(Kubernetes.CACert) {
-		return fmt.Errorf("kubernetes CA certificate file %q not found", Kubernetes.CACert)
-	}
-
-	url, err := url.Parse(Kubernetes.APIServer)
-	if err != nil {
-		return fmt.Errorf("kubernetes API server address %q invalid: %v", Kubernetes.APIServer, err)
-	} else if url.Scheme != "https" && url.Scheme != "http" {
-		return fmt.Errorf("kubernetes API server URL scheme %q invalid", url.Scheme)
-	}
-
 	return nil
 }
 
@@ -235,15 +187,15 @@ func getConfigFilePath(ctx *cli.Context) (string, bool) {
 // InitConfig reads the config file and common command-line options and
 // constructs the global config object from them. It returns the config file
 // path (if explicitly specified) or an error
-func InitConfig(ctx *cli.Context, exec kexec.Interface, defaults *Defaults) (string, error) {
-	return InitConfigWithPath(ctx, exec, "", defaults)
+func InitConfig(ctx *cli.Context) (string, error) {
+	return InitConfigWithPath(ctx, "")
 }
 
 // InitConfigWithPath reads the given config file (or if empty, reads the config file
 // specified by command-line arguments, or empty, the default config file) and
 // common command-line options and constructs the global config object from
 // them. It returns the config file path (if explicitly specified) or an error
-func InitConfigWithPath(ctx *cli.Context, exec kexec.Interface, configFile string, defaults *Defaults) (string, error) {
+func InitConfigWithPath(ctx *cli.Context, configFile string) (string, error) {
 	var cfg config
 	var retConfigFile string
 	var configFileIsDefault bool
@@ -277,10 +229,6 @@ func InitConfigWithPath(ctx *cli.Context, exec kexec.Interface, configFile strin
 		logrus.Infof("Parsed config: %+v", cfg)
 	}
 
-	if defaults == nil {
-		defaults = &Defaults{}
-	}
-
 	// Build config that needs no special processing
 	overrideFields(&Default, &cfg.Default)
 	overrideFields(&Default, &cliConfig.Default)
@@ -301,7 +249,7 @@ func InitConfigWithPath(ctx *cli.Context, exec kexec.Interface, configFile strin
 		}
 	}
 
-	if err = buildKubernetesConfig(exec, &cliConfig, &cfg, defaults); err != nil {
+	if err = buildKubernetesConfig(&cliConfig, &cfg); err != nil {
 		return "", err
 	}
 	logrus.Debugf("Default config: %+v", Default)
@@ -320,8 +268,7 @@ func pathExists(path string) bool {
 	return true
 }
 
-// NewClientset creates a Kubernetes clientset from either a kubeconfig,
-// TLS properties, or an apiserver URL
+// NewClientset creates a Kubernetes clientset
 func NewClientset(conf *KubernetesConfig) (*kubernetes.Clientset, error) {
 	var kconfig *rest.Config
 	var err error
@@ -329,27 +276,6 @@ func NewClientset(conf *KubernetesConfig) (*kubernetes.Clientset, error) {
 	if conf.Kubeconfig != "" {
 		// uses the current context in kubeconfig
 		kconfig, err = clientcmd.BuildConfigFromFlags("", conf.Kubeconfig)
-	} else if strings.HasPrefix(conf.APIServer, "https") {
-		if conf.APIServer == "" || conf.Token == "" {
-			return nil, fmt.Errorf("TLS-secured apiservers require token and CA certificate")
-		}
-		kconfig = &rest.Config{
-			Host:        conf.APIServer,
-			BearerToken: conf.Token,
-		}
-		if conf.CACert != "" {
-			if _, err := cert.NewPool(conf.CACert); err != nil {
-				return nil, err
-			}
-			kconfig.TLSClientConfig = rest.TLSClientConfig{CAFile: conf.CACert}
-		}
-	} else if strings.HasPrefix(conf.APIServer, "http") {
-		kconfig, err = clientcmd.BuildConfigFromFlags(conf.APIServer, "")
-	} else {
-		// Assume we are running from a container managed by kubernetes
-		// and read the apiserver address and tokens from the
-		// container's environment.
-		kconfig, err = rest.InClusterConfig()
 	}
 	if err != nil {
 		return nil, err

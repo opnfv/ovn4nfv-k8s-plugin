@@ -17,7 +17,7 @@ Problem statement
 -----------------
 
 Networking applications are of three types - Management applications,
-Control plane applications and  data plane applications. Management
+Control plane applications and data plane applications. Management
 and control plane applications are similar to Enterprise applications,
 but data plane applications different in following aspects:
 
@@ -66,9 +66,8 @@ NFV workloads can be,
 New Proposal
 ------------
 
-A new plugin addressing the below requirements,
-
-- For networking workloads as well typical application workloads
+A new plugin addresses the below requirements, for networking
+workloads as well typical application workloads
 - Multi-interface support
 - Multi-IP address support
 - Dynamic creation of virtual networks
@@ -83,74 +82,122 @@ native support for virtual network abstractions, such as virtual L2
 and L3 overlays and security groups. Services such as DHCP are also
 desirable features. Just like OVS, OVN’s design goal is to have a
 production quality implementation that can operate at significant
-scale. 
+scale.
 
-**K8S-OVN4NFV Plugin development**
+**OVN4NFVK8s Plugin development**
 
-Some code and ideas are being taken from ovn-kubernetes_ plugin
-work that was done as part of OVN project.  Due to good number of
-changes, it is a new plugin with its own code base.  This plugin
-assumes that the first interface in a Pod is provided by some other
-Plugin/CNI like Flannel or even OVN-Kubernetes and this plugin is
-only responsible to add multiple interfaces based on the Pod
-annotations. This plugin is currently tested to work with Multus as
-CNI and Flannel as first interface.
+ovn-kubernetes_ plugin is part of OVN project which provides OVN
+integration with Kubernetes but doesn't address the requirements
+as given above. To meet those requirements like multiple interfaces,
+IPs, dynamic creation of virtual networks, etc., OVN4NFVK8s plugin is
+created. It assumes that it will be used in conjuction with Multus_
+or other similar CNI which allows for the co-existance of multiple
+CNI plugins in runtime. This plugin assumes that the first interface
+in a Pod is provided by some other Plugin/CNI like Flannel or even
+OVN-Kubernetes. It is only responsible to add multiple interfaces
+based on the Pod annotations. The code is based on ovn-kubernetes_.
 
-Its functionality is divided into to following:
 
-- Initialization:
+.. note::
 
-  - Register itself as watcher to K8S API Server to receive POD events
-    and service events.
-  - Creates a distributed router
-  - Creates gateway
-  - Creates a logical switch to connect distributed router with
-    Gateway.
-  - Creates a subnet between distributed router & Gateway.
-  - Assigns first two IP addresses of the subnet to router and
-    Gateway.
-  - Created router port and gateway port as part of assigning IP
-    address and MAC addresses.
+ This plugin is currently tested to work with Multus and Flannel
+ providing the first network interface.
 
-- Watcher:
+To meet the requirement of multiple interfaces and IP's per pod,
+a Pod annotation like below is required when working with Multus:
 
-  - Upon POD bring up event
 
-    - Checks the annotations specific to OVN.
-    - For each network on which POD is going to be brought up
-    - Validates whether the logical switch is already present. If not,
-      it is considered as error.
-    - If IP address and MAC addresses are not static, it asks OVN to
-      assign IP and MAC address.
-    - Collects all IP addresses/MAC addresses assigned. Puts them as
-      annotations (dynamic information) for that POD.
+.. code-block:: yaml
 
-  - Upon POD deletion event
 
-    - Returns the IP address and MAC address back to OVN pool.
+  annotations:
+     k8s.v1.cni.cncf.io/networks: '[{ "name": "ovn-networkobj"}]'
+     ovnNetwork '[
+         { "name": <name of OVN Logical Switch>, "interfaceRequest": "eth1" },
+         { "name":  <name of OVN Logical Switch>, "interfaceRequest": "eth2" }
+  ]'
 
-- OVN CNI
+Based on these annotations watcher service in OVN4NFVK8s plugin assumes
+logical switch is already present. Dynamic IP addresses are assigned
+(static IP's also supported) and annotations are updated.
 
-This is present in every minion node. CNI is expected to be called
-once for all OVN networks either Kubelet directly or via Multus.
+When the Pod is initialized on a node, OVN4NFVK8s CNI creates multiple
+interfaces and assigns IP addresses for the pod based on the annotations.
 
-  - Add:
+**Multus Configuration**
+Multus CRD definition for OVN:
 
-    - Wait for annotations to be filled up by the watcher. From
-      annotations, it knows set  of IP Address, MAC address and Routes
-      to be added.
-    - Using network APIs for each element in the set:
-    - Creates veth pair.
-    - Assigns the IP address and MAC address to one end of veth pair.
-      Other end veth pair is assigned to br-int.
-    - Creates routes based on the route list provided in annotations.
+.. code-block:: yaml
 
-  - If isDefaultRoute is set in annotations, it creates default route
-    using this veth.
-  - Delete
+  apiVersion: "k8s.cni.cncf.io/v1"
+  kind: NetworkAttachmentDefinition
+  metadata:
+    name: ovn-networkobj
+  spec:
+    config: '{
+        "cniVersion": "0.3.1",
+        "name": "ovn4nfv-k8s-plugin",
+        "type": "ovn4nfvk8s-cni"
+      }'
 
-    - Removes veth pair.
-    - Removes routes.
+Please refer to Multus_ for details about how this configuration is used
+
+CNI configuration file for Multus with Flannel:
+
+.. code-block:: yaml
+
+ {
+  "type": "multus",
+  "name": "multus-cni",
+  "cniVersion": "0.3.1",
+  "kubeconfig": "/etc/kubernetes/admin.conf",
+  "delegates": [
+    {
+      "type": "flannel",
+      "cniVersion": "0.3.1",
+      "masterplugin": true,
+      "delegate": {
+        "isDefaultGateway": false
+      }
+    }
+  ]
+ }
+
+Refer Kubernetes_ documentation for the order in which CNI configurations
+are applied.
+
+
+**Build**
+
+For building the project:
+
+.. code-block:: bash
+
+  cd ovn4nfv-k8s-plugin
+  make
+
+
+This will output two files ovn4nfvk8s and ovn4nfvk8s-cni which are the plugin
+ and CNI binaries respectively.
+
+ovn4nfvk8s plugin requires some configuration at start up.
+
+Example configuration file (default location/etc/openvswitch/ovn4nfv_k8s.conf)
+
+.. code-block:: yaml
+
+  [logging]
+  loglevel=5
+  logfile=/var/log/openvswitch/ovn4k8s.log
+
+  [cni]
+  conf-dir=/etc/cni/net.d
+  plugin=ovn4nfvk8s-cni
+
+  [kubernetes]
+  kubeconfig=/etc/kubernetes/admin.conf
+
+
 
 **Figure**
 
@@ -185,12 +232,13 @@ once for all OVN networks either Kubelet directly or via Multus.
                                  +--------------------+
 
 
-   Complete Architecture can be found in ovn-kubernetes documentation at github
 
 
 **References**
 
-.. _ovn-kubernetes: https://wiki.opnfv.org/display/OV/K8S+OVN+NFV+Plugin
+.. _ovn-kubernetes: https://github.com/openvswitch/ovn-kubernetes
+.. _Multus: https://github.com/intel/multus-cni
+.. _Kubernetes: https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/network-plugins/
 
 **Authors/Contributors**
 

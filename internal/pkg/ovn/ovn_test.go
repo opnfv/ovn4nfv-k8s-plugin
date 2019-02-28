@@ -57,12 +57,12 @@ var _ = Describe("Add logical Port", func() {
 			})
 
 			fakeCmds = ovntest.AddFakeCmd(fakeCmds, &ovntest.ExpectedCmd{
-				Cmd:    "ovn-nbctl --timeout=15 --if-exists get logical_switch " + netName + " external_ids:gateway_ip",
-				Output: gwCIDR,
-			})
-			fakeCmds = ovntest.AddFakeCmd(fakeCmds, &ovntest.ExpectedCmd{
 				Cmd:    "ovn-nbctl --timeout=15 get logical_switch_port " + portName + " dynamic_addresses",
 				Output: macIPAddress,
+			})
+			fakeCmds = ovntest.AddFakeCmd(fakeCmds, &ovntest.ExpectedCmd{
+				Cmd:    "ovn-nbctl --timeout=15 --if-exists get logical_switch " + netName + " external_ids:gateway_ip",
+				Output: gwCIDR,
 			})
 
 			fexec := &fakeexec.FakeExec{
@@ -105,7 +105,7 @@ var _ = Describe("Add logical Port", func() {
 			)
 
 			ovnController.addLogicalPort(&okPod)
-			_, _ = ovnController.kube.GetAnnotationsOnPod("", "ok")
+			Expect(fexec.CommandCalls).To(Equal(len(fakeCmds)))
 
 			return nil
 		}
@@ -113,4 +113,74 @@ var _ = Describe("Add logical Port", func() {
 		err := app.Run([]string{app.Name})
 		Expect(err).NotTo(HaveOccurred())
 	})
+
+	It("tests Pod provider", func() {
+		app.Action = func(ctx *cli.Context) error {
+			const (
+				gwIP         string = "10.1.1.1"
+				gwCIDR       string = gwIP + "/24"
+				netName      string = "ovn-prot-net"
+				portName     string = "_ok_net0"
+				macIPAddress string = "0a:00:00:00:00:01 192.168.1.3/24"
+			)
+			fakeCmds := ovntest.AddFakeCmd(nil, &ovntest.ExpectedCmd{
+				Cmd:    "ovn-nbctl --timeout=15 --data=bare --no-heading --columns=name find logical_switch " + "name=" + netName,
+				Output: netName,
+			})
+
+			fakeCmds = ovntest.AddFakeCmdsNoOutputNoError(fakeCmds, []string{
+				"ovn-nbctl --timeout=15 --may-exist lsp-add " + netName + " " + portName + " -- lsp-set-addresses " + portName + " " + macIPAddress + " -- --if-exists clear logical_switch_port " + portName + " dynamic_addresses",
+			})
+
+			fakeCmds = ovntest.AddFakeCmd(fakeCmds, &ovntest.ExpectedCmd{
+				Cmd:    "ovn-nbctl --timeout=15 get logical_switch_port " + portName + " addresses",
+				Output: macIPAddress,
+			})
+
+			fexec := &fakeexec.FakeExec{
+				CommandScript: fakeCmds,
+				LookPathFunc: func(file string) (string, error) {
+					return fmt.Sprintf("/fake-bin/%s", file), nil
+				},
+			}
+			err := util.SetExec(fexec)
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = config.InitConfig(ctx, fexec, nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			fakeClient := &fake.Clientset{}
+			var fakeWatchFactory factory.WatchFactory
+
+			ovnController := NewOvnController(fakeClient, &fakeWatchFactory)
+			var (
+				okPod = v1.Pod{
+					TypeMeta: metav1.TypeMeta{
+						Kind:       "Pod",
+						APIVersion: "v1",
+					},
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "ok",
+						Annotations: map[string]string{"ovnNetwork": "[{ \"name\": \"ovn-prot-net\", \"interface\": \"net0\", \"netType\": \"provider\", \"ipAddress\": \"192.168.1.3/24\", \"macAddress\": \"0a:00:00:00:00:01\" }]"},
+					},
+					Spec: v1.PodSpec{
+						Containers: []v1.Container{
+							{
+								Name: "by-name",
+							},
+							{},
+						},
+					},
+				}
+			)
+			ovnController.addLogicalPort(&okPod)
+			Expect(fexec.CommandCalls).To(Equal(len(fakeCmds)))
+
+			return nil
+		}
+
+		err := app.Run([]string{app.Name})
+		Expect(err).NotTo(HaveOccurred())
+	})
+
 })

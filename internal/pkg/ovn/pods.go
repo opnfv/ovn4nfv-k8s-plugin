@@ -80,7 +80,7 @@ func (oc *Controller) deleteLogicalPort(pod *kapi.Pod) {
 	return
 }
 
-func (oc *Controller) addLogicalPortWithSwitch(pod *kapi.Pod, logicalSwitch, ipAddress, macAddress, interfaceName string) (annotation string) {
+func (oc *Controller) addLogicalPortWithSwitch(pod *kapi.Pod, logicalSwitch, ipAddress, macAddress, interfaceName, netType string) (annotation string) {
 	var out, stderr string
 	var err error
 	var isStaticIP bool
@@ -136,11 +136,6 @@ func (oc *Controller) addLogicalPortWithSwitch(pod *kapi.Pod, logicalSwitch, ipA
 		}
 	}
 	oc.logicalPortCache[portName] = logicalSwitch
-	gatewayIP, mask, err := oc.getGatewayFromSwitch(logicalSwitch)
-	if err != nil {
-		logrus.Errorf("Error obtaining gateway address for switch %s: %s", logicalSwitch, err)
-		return
-	}
 
 	count := 30
 	for count > 0 {
@@ -178,7 +173,18 @@ func (oc *Controller) addLogicalPortWithSwitch(pod *kapi.Pod, logicalSwitch, ipA
 		logrus.Errorf("Error while obtaining addresses for %s", portName)
 		return
 	}
-	annotation = fmt.Sprintf(`{\"ip_address\":\"%s/%s\", \"mac_address\":\"%s\", \"gateway_ip\": \"%s\"}`, addresses[1], mask, addresses[0], gatewayIP)
+
+	if netType == "virtual" {
+		gatewayIP, mask, err := oc.getGatewayFromSwitch(logicalSwitch)
+		if err != nil {
+			logrus.Errorf("Error obtaining gateway address for switch %s: %s", logicalSwitch, err)
+			return
+		}
+		annotation = fmt.Sprintf(`{\"ip_address\":\"%s/%s\", \"mac_address\":\"%s\", \"gateway_ip\": \"%s\"}`, addresses[1], mask, addresses[0], gatewayIP)
+	} else {
+		annotation = fmt.Sprintf(`{\"ip_address\":\"%s\", \"mac_address\":\"%s\", \"gateway_ip\": \"%s\"}`, addresses[1], addresses[0], "")
+	}
+
 	return annotation
 }
 
@@ -203,7 +209,7 @@ func findLogicalSwitch(name string) bool {
 
 func (oc *Controller) addLogicalPort(pod *kapi.Pod) {
 	var logicalSwitch string
-	var ipAddress, macAddress, interfaceName, defaultGateway string
+	var ipAddress, macAddress, interfaceName, defaultGateway, netType string
 
 	annotation := pod.Annotations["ovnNetwork"]
 
@@ -217,10 +223,15 @@ func (oc *Controller) addLogicalPort(pod *kapi.Pod) {
 		ovnString = "["
 		for _, net := range ovnNetObjs {
 			logicalSwitch = net["name"].(string)
+			if !findLogicalSwitch(logicalSwitch) {
+				logrus.Errorf("Logical Switch not found")
+				return
+			}
 			if _, ok := net["interface"]; ok {
 				interfaceName = net["interface"].(string)
 			} else {
-				interfaceName = ""
+				logrus.Errorf("Interface name must be provided")
+				return
 			}
 			if _, ok := net["ipAddress"]; ok {
 				ipAddress = net["ipAddress"].(string)
@@ -237,14 +248,24 @@ func (oc *Controller) addLogicalPort(pod *kapi.Pod) {
 			} else {
 				defaultGateway = "false"
 			}
-			if !findLogicalSwitch(logicalSwitch) {
+			if _, ok := net["netType"]; ok {
+				netType = net["netType"].(string)
+			} else {
+				netType = "virtual"
+			}
+			if netType != "provider" && netType != "virtual" {
+				logrus.Errorf("netType is not supported")
 				return
 			}
-			if interfaceName == "" {
-				logrus.Errorf("Interface name must be provided")
+			if netType == "provider" && ipAddress == "" {
+				logrus.Errorf("ipAddress must be provided for netType Provider")
 				return
 			}
-			outStr = oc.addLogicalPortWithSwitch(pod, logicalSwitch, ipAddress, macAddress, interfaceName)
+			if netType == "provider" && defaultGateway == "true" {
+				logrus.Errorf("defaultGateway not supported for provider network - Use ovnNetworkRoutes to add routes")
+				return
+			}
+			outStr = oc.addLogicalPortWithSwitch(pod, logicalSwitch, ipAddress, macAddress, interfaceName, netType)
 			if outStr == "" {
 				return
 			}

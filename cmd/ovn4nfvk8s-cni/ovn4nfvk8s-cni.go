@@ -128,7 +128,7 @@ func addMultipleInterfaces(args *skel.CmdArgs, ovnAnnotation, namespace, podName
 		gatewayIP := ovnNet["gateway_ip"]
 		defaultGateway := ovnNet["defaultGateway"]
 
-		if ipAddress == "" || macAddress == "" || gatewayIP == "" {
+		if ipAddress == "" || macAddress == "" {
 			logrus.Errorf("failed in pod annotation key extract")
 			return nil
 		}

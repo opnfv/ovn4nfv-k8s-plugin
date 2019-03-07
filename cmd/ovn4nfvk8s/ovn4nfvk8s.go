@@ -22,7 +22,6 @@ func main() {
 	c := cli.NewApp()
 	c.Name = "ovn4nfvk8s"
 	c.Usage = "run ovn4nfvk8s to start pod watchers"
-	c.Version = config.Version
 	c.Flags = append([]cli.Flag{
 		// Daemon file
 		cli.StringFlag{
@@ -50,9 +49,8 @@ func delPidfile(pidfile string) {
 }
 
 func runOvnKube(ctx *cli.Context) error {
-	fmt.Println("ovn4nfvk8s started")
 	exec := kexec.New()
-	_, err := config.InitConfig(ctx, exec, nil)
+	_, err := config.InitConfig(ctx)
 	if err != nil {
 		return err
 	}

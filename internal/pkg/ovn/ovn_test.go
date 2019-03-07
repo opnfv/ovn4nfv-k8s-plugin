@@ -31,8 +31,6 @@ var _ = Describe("Add logical Port", func() {
 	var app *cli.App
 
 	BeforeEach(func() {
-		// Restore global default values before each testcase
-		//config.RestoreDefaultConfig()
 
 		app = cli.NewApp()
 		app.Name = "test"
@@ -73,9 +71,6 @@ var _ = Describe("Add logical Port", func() {
 			}
 
 			err := util.SetExec(fexec)
-			Expect(err).NotTo(HaveOccurred())
-
-			_, err = config.InitConfig(ctx, fexec, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			fakeClient := &fake.Clientset{}

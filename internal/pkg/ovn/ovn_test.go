@@ -124,7 +124,7 @@ var _ = Describe("Add logical Port", func() {
 			})
 
 			fakeCmds = ovntest.AddFakeCmdsNoOutputNoError(fakeCmds, []string{
-				"ovn-nbctl --timeout=15 --may-exist lsp-add " + netName + " " + portName + " -- lsp-set-addresses " + portName + " " + macIPAddress + " -- --if-exists clear logical_switch_port " + portName + " dynamic_addresses",
+				"ovn-nbctl --timeout=15 --may-exist lsp-add " + netName + " " + portName + " -- lsp-set-addresses " + portName + " " + macIPAddress + " -- --if-exists clear logical_switch_port " + portName + " dynamic_addresses" + " -- set logical_switch_port " + portName + " external-ids:namespace= external-ids:logical_switch=" + netName + " external-ids:pod=true",
 			})
 
 			fakeCmds = ovntest.AddFakeCmd(fakeCmds, &ovntest.ExpectedCmd{
@@ -139,9 +139,6 @@ var _ = Describe("Add logical Port", func() {
 				},
 			}
 			err := util.SetExec(fexec)
-			Expect(err).NotTo(HaveOccurred())
-
-			_, err = config.InitConfig(ctx, fexec, nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			fakeClient := &fake.Clientset{}

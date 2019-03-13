@@ -195,6 +195,53 @@ func addMultipleInterfaces(args *skel.CmdArgs, ovnAnnotation, namespace, podName
 	return dstResult
 }
 
+func addRoutes(args *skel.CmdArgs, ovnAnnotation string, dstResult types.Result) types.Result {
+        logrus.Infof("ovn4nfvk8s-cni: addRoutes ")
+
+        var ovnAnnotatedMap []map[string]string
+        ovnAnnotatedMap, err := parseOvnNetworkObject(ovnAnnotation)
+        if err != nil {
+                logrus.Errorf("addLogicalPort : Error Parsing Ovn Route List %v", err)
+                return nil
+        }
+
+        var result types.Result
+        var routes []*types.Route
+        for _, ovnNet := range ovnAnnotatedMap {
+                dst := ovnNet["dst"]
+                gw := ovnNet["gw"]
+                dev := ovnNet["dev"]
+                if dst == "" || gw == "" || dev == "" {
+                        logrus.Errorf("failed in pod annotation key extract")
+                        return nil
+                }
+                err = app.ConfigureRoute(args, dst, gw, dev)
+                if err != nil {
+                        logrus.Errorf("Failed to configure interface in pod: %v", err)
+                        return nil
+                }
+                dstAddr, dstAddrNet, _ := net.ParseCIDR(dst)
+                routes = append(routes, &types.Route{
+                        Dst: net.IPNet{IP: dstAddr, Mask: dstAddrNet.Mask},
+                        GW:  net.ParseIP(gw),
+                })
+        }
+
+        result = &current.Result{
+                Routes: routes,
+        }
+        // Build the result structure to pass back to the runtime
+        dstResult, err = mergeWithResult(result, dstResult)
+        if err != nil {
+                logrus.Errorf("Failed to merge results: %v", err)
+                return nil
+        }
+        logrus.Infof("addRoutes:  %s", prettyPrint(dstResult))
+        return dstResult
+
+}
+
+
 func cmdAdd(args *skel.CmdArgs) error {
 	logrus.Infof("ovn4nfvk8s-cni: cmdAdd ")
 	conf := &types.NetConf{}
@@ -242,6 +289,13 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return fmt.Errorf("Error while obtaining pod annotations")
 	}
 	result := addMultipleInterfaces(args, ovnAnnotation, namespace, podName)
+        // Add Routes to the pod if annotation found for routes
+        ovnRouteAnnotation, ok := annotation["ovnNetworkRoutes"]
+        if ok {
+                logrus.Infof("ovn4nfvk8s-cni: ovnNetworkRoutes Annotation Found %+v", ovnRouteAnnotation)
+                result = addRoutes(args, ovnRouteAnnotation, result)
+        }
+
 	return result.Print()
 }
 

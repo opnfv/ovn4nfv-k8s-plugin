@@ -143,6 +143,32 @@ var ConfigureInterface = func(args *skel.CmdArgs, namespace, podName, macAddress
 	return []*current.Interface{hostIface, contIface}, nil
 }
 
+func setupRoute(netns ns.NetNS, dst, gw, dev string) error {
+        // Add Route to the namespace
+        err := netns.Do(func(_ ns.NetNS) error {
+                dstAddr, dstAddrNet, _ := net.ParseCIDR(dst)
+                ipNet := net.IPNet{IP: dstAddr, Mask: dstAddrNet.Mask}
+                link, err := netlink.LinkByName(dev)
+                err = ip.AddRoute(&ipNet, net.ParseIP(gw), link)
+                if err != nil {
+                        logrus.Errorf("ip.AddRoute failed %v dst %v gw %v", err, dst, gw)
+                }
+                return err
+        })
+        return err
+}
+
+// ConfigureRoute sets up the container routes
+var ConfigureRoute = func(args *skel.CmdArgs, dst, gw, dev string) error {
+        netns, err := ns.GetNS(args.Netns)
+        if err != nil {
+                return fmt.Errorf("failed to open netns %q: %v", args.Netns, err)
+        }
+        defer netns.Close()
+        err = setupRoute(netns, dst, gw, dev)
+        return err
+}
+
 // PlatformSpecificCleanup deletes the OVS port
 func PlatformSpecificCleanup(ifaceName string) (bool, error) {
 	done := false

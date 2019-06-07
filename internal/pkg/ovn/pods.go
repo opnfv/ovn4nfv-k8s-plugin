@@ -113,10 +113,10 @@ func (oc *Controller) addLogicalPortWithSwitch(pod *kapi.Pod, logicalSwitch, ipA
 			logicalSwitch, portName, "--", "lsp-set-addresses", portName,
 			fmt.Sprintf("%s %s", macAddress, ipAddress), "--", "--if-exists",
 			"clear", "logical_switch_port", portName, "dynamic_addresses", "--", "set",
-                        "logical_switch_port", portName,
-                        "external-ids:namespace="+pod.Namespace,
-                        "external-ids:logical_switch="+logicalSwitch,
-                        "external-ids:pod=true")
+			"logical_switch_port", portName,
+			"external-ids:namespace="+pod.Namespace,
+			"external-ids:logical_switch="+logicalSwitch,
+			"external-ids:pod=true")
 		if err != nil {
 			logrus.Errorf("Failed to add logical port to switch "+
 				"stdout: %q, stderr: %q (%v)",

@@ -30,7 +30,7 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	k8s.io/api v0.0.0-20181117111259-46ad728b8d13
 	k8s.io/apimachinery v0.0.0-20181116115711-1b0702fe2927
-	k8s.io/client-go v9.0.0+incompatible
+	k8s.io/client-go v10.0.0+incompatible
 	k8s.io/klog v0.1.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20181114233023-0317810137be // indirect
 	k8s.io/utils v0.0.0-20181115163542-0d26856f57b3

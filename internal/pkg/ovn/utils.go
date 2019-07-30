@@ -1,4 +1,4 @@
-package util
+package ovn
 
 import (
 	"bytes"
@@ -95,14 +95,8 @@ func run(cmdPath string, args ...string) (*bytes.Buffer, *bytes.Buffer, error) {
 	return stdout, stderr, err
 }
 
-// RunOVSOfctl runs a command via ovs-ofctl.
-func RunOVSOfctl(args ...string) (string, string, error) {
-	stdout, stderr, err := run(runner.ofctlPath, args...)
-	return strings.Trim(stdout.String(), "\" \n"), stderr.String(), err
-}
-
 // RunOVSVsctl runs a command via ovs-vsctl.
-func RunOVSVsctl(args ...string) (string, string, error) {
+func RunOVSVsctlUnix(args ...string) (string, string, error) {
 	cmdArgs := []string{fmt.Sprintf("--timeout=%d", ovsCommandTimeout)}
 	cmdArgs = append(cmdArgs, args...)
 	stdout, stderr, err := run(runner.vsctlPath, cmdArgs...)

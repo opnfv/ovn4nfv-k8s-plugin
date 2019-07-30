@@ -13,7 +13,6 @@ import (
 	"ovn4nfv-k8s-plugin/internal/pkg/config"
 	"ovn4nfv-k8s-plugin/internal/pkg/factory"
 	ovntest "ovn4nfv-k8s-plugin/internal/pkg/testing"
-	"ovn4nfv-k8s-plugin/internal/pkg/util"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -70,7 +69,7 @@ var _ = Describe("Add logical Port", func() {
 				},
 			}
 
-			err := util.SetExec(fexec)
+			err := SetExec(fexec)
 			Expect(err).NotTo(HaveOccurred())
 
 			fakeClient := &fake.Clientset{}
@@ -138,7 +137,7 @@ var _ = Describe("Add logical Port", func() {
 					return fmt.Sprintf("/fake-bin/%s", file), nil
 				},
 			}
-			err := util.SetExec(fexec)
+			err := SetExec(fexec)
 			Expect(err).NotTo(HaveOccurred())
 
 			fakeClient := &fake.Clientset{}

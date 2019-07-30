@@ -15,7 +15,6 @@ import (
 	"ovn4nfv-k8s-plugin/internal/pkg/config"
 	"ovn4nfv-k8s-plugin/internal/pkg/factory"
 	"ovn4nfv-k8s-plugin/internal/pkg/ovn"
-	"ovn4nfv-k8s-plugin/internal/pkg/util"
 )
 
 func main() {
@@ -95,7 +94,7 @@ func runOvnKube(ctx *cli.Context) error {
 		}
 	}
 
-	if err = util.SetExec(exec); err != nil {
+	if err = ovn.SetExec(exec); err != nil {
 		logrus.Errorf("Failed to initialize exec helper: %v", err)
 		return err
 	}
@@ -106,7 +105,7 @@ func runOvnKube(ctx *cli.Context) error {
 	}
 
 	// Create distributed router and gateway for the deployment
-	err = ovn.SetupMaster("ovn4nfv-master")
+	err = ovn.SetupDistributedRouter("ovn4nfv-master")
 	if err != nil {
 		logrus.Errorf(err.Error())
 		panic(err.Error())

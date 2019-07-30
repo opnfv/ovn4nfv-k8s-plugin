@@ -4,77 +4,57 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/sirupsen/logrus"
-	"strings"
+	"math/big"
+	"math/rand"
+	"net"
+	"time"
 )
 
-func (oc *Controller) getIPFromOvnAnnotation(ovnAnnotation string) string {
-	if ovnAnnotation == "" {
-		return ""
-	}
+func SetupDistributedRouter(name string) error {
 
-	var ovnAnnotationMap map[string]string
-	err := json.Unmarshal([]byte(ovnAnnotation), &ovnAnnotationMap)
+	// Make sure br-int is created.
+	stdout, stderr, err := RunOVSVsctlUnix("--", "--may-exist", "add-br", "br-int")
 	if err != nil {
-		logrus.Errorf("Error in json unmarshaling ovn annotation "+
-			"(%v)", err)
-		return ""
+		logrus.Errorf("Failed to create br-int, stdout: %q, stderr: %q, error: %v", stdout, stderr, err)
+		return err
 	}
-
-	ipAddressMask := strings.Split(ovnAnnotationMap["ip_address"], "/")
-	if len(ipAddressMask) != 2 {
-		logrus.Errorf("Error in splitting ip address")
-		return ""
-	}
-
-	return ipAddressMask[0]
-}
-
-func (oc *Controller) getMacFromOvnAnnotation(ovnAnnotation string) string {
-	if ovnAnnotation == "" {
-		return ""
-	}
-
-	var ovnAnnotationMap map[string]string
-	err := json.Unmarshal([]byte(ovnAnnotation), &ovnAnnotationMap)
+	// Create a single common distributed router for the cluster.
+	stdout, stderr, err = RunOVNNbctlUnix("--", "--may-exist", "lr-add", name, "--", "set", "logical_router", name, "external_ids:ovn4nfv-cluster-router=yes")
 	if err != nil {
-		logrus.Errorf("Error in json unmarshaling ovn annotation "+
-			"(%v)", err)
-		return ""
+		logrus.Errorf("Failed to create a single common distributed router for the cluster, stdout: %q, stderr: %q, error: %v", stdout, stderr, err)
+		return err
 	}
-
-	return ovnAnnotationMap["mac_address"]
-}
-
-func stringSliceMembership(slice []string, key string) bool {
-	for _, val := range slice {
-		if val == key {
-			return true
+	// Create a logical switch called "ovn4nfv-join" that will be used to connect gateway routers to the distributed router.
+	// The "ovn4nfv-join" will be allocated IP addresses in the range 100.64.1.0/24.
+	stdout, stderr, err = RunOVNNbctlUnix("--may-exist", "ls-add", "ovn4nfv-join")
+	if err != nil {
+		logrus.Errorf("Failed to create logical switch called \"ovn4nfv-join\", stdout: %q, stderr: %q, error: %v", stdout, stderr, err)
+		return err
+	}
+	// Connect the distributed router to "ovn4nfv-join".
+	routerMac, stderr, err := RunOVNNbctlUnix("--if-exist", "get", "logical_router_port", "rtoj-"+name, "mac")
+	if err != nil {
+		logrus.Errorf("Failed to get logical router port rtoj-%v, stderr: %q, error: %v", name, stderr, err)
+		return err
+	}
+	if routerMac == "" {
+		routerMac = generateMac()
+		stdout, stderr, err = RunOVNNbctlUnix("--", "--may-exist", "lrp-add", name, "rtoj-"+name, routerMac, "100.64.1.1/24", "--", "set", "logical_router_port", "rtoj-"+name, "external_ids:connect_to_ovn4nfvjoin=yes")
+		if err != nil {
+			logrus.Errorf("Failed to add logical router port rtoj-%v, stdout: %q, stderr: %q, error: %v", name, stdout, stderr, err)
+			return err
 		}
 	}
-	return false
-}
-
-func (oc *Controller) getNetworkFromOvnAnnotation(ovnAnnotation string) string {
-	if ovnAnnotation == "" {
-		logrus.Errorf("getNetworkFromOvnAnnotation ovnAnnotation: %s", ovnAnnotation)
-		return ""
-	}
-	logrus.Infof("getNetworkFromOvnAnnotation ovnAnnotation: %s", ovnAnnotation)
-
-	var ovnAnnotationMap map[string]string
-	err := json.Unmarshal([]byte(ovnAnnotation), &ovnAnnotationMap)
+	// Connect the switch "ovn4nfv-join" to the router.
+	stdout, stderr, err = RunOVNNbctlUnix("--", "--may-exist", "lsp-add", "ovn4nfv-join", "jtor-"+name, "--", "set", "logical_switch_port", "jtor-"+name, "type=router", "options:router-port=rtoj-"+name, "addresses="+"\""+routerMac+"\"")
 	if err != nil {
-		logrus.Errorf("Error in json unmarshaling ovn annotation "+
-			"(%v)", err)
-		return ""
+		logrus.Errorf("Failed to add logical switch port to logical router, stdout: %q, stderr: %q, error: %v", stdout, stderr, err)
+		return err
 	}
-	for key, value := range ovnAnnotationMap {
-		logrus.Infof("getNetworkFromOvnAnnotation %s: %s", key, value)
-	}
-	return ovnAnnotationMap["name"]
+	return nil
 }
 
-func (oc *Controller) parseOvnNetworkObject(ovnnetwork string) ([]map[string]interface{}, error) {
+func parseOvnNetworkObject(ovnnetwork string) ([]map[string]interface{}, error) {
 	var ovnNet []map[string]interface{}
 
 	if ovnnetwork == "" {
@@ -86,4 +66,29 @@ func (oc *Controller) parseOvnNetworkObject(ovnnetwork string) ([]map[string]int
 	}
 
 	return ovnNet, nil
+}
+
+// generateMac generates mac address.
+func generateMac() string {
+	prefix := "00:00:00"
+	newRand := rand.New(rand.NewSource(time.Now().UnixNano()))
+	mac := fmt.Sprintf("%s:%02x:%02x:%02x", prefix, newRand.Intn(255), newRand.Intn(255), newRand.Intn(255))
+	return mac
+}
+
+// NextIP returns IP incremented by 1
+func NextIP(ip net.IP) net.IP {
+	i := ipToInt(ip)
+	return intToIP(i.Add(i, big.NewInt(1)))
+}
+
+func ipToInt(ip net.IP) *big.Int {
+	if v := ip.To4(); v != nil {
+		return big.NewInt(0).SetBytes(v)
+	}
+	return big.NewInt(0).SetBytes(ip.To16())
+}
+
+func intToIP(i *big.Int) net.IP {
+	return net.IP(i.Bytes())
 }

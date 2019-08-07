@@ -9,9 +9,7 @@ import (
 
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes/fake"
 	"ovn4nfv-k8s-plugin/internal/pkg/config"
-	"ovn4nfv-k8s-plugin/internal/pkg/factory"
 	ovntest "ovn4nfv-k8s-plugin/internal/pkg/testing"
 
 	. "github.com/onsi/ginkgo"
@@ -30,10 +28,10 @@ var _ = Describe("Add logical Port", func() {
 	var app *cli.App
 
 	BeforeEach(func() {
-
 		app = cli.NewApp()
 		app.Name = "test"
 		app.Flags = config.Flags
+
 	})
 
 	It("tests Pod", func() {
@@ -68,15 +66,15 @@ var _ = Describe("Add logical Port", func() {
 					return fmt.Sprintf("/fake-bin/%s", file), nil
 				},
 			}
-
-			err := SetExec(fexec)
+			oldSetupOvnUtils := SetupOvnUtils
+			// as we are exiting, revert ConfigureInterface back  at end of function
+			defer func() { SetupOvnUtils = oldSetupOvnUtils }()
+			SetupOvnUtils = func() error {
+				return nil
+			}
+			ovnController, err := NewOvnController(fexec)
 			Expect(err).NotTo(HaveOccurred())
 
-			fakeClient := &fake.Clientset{}
-			var fakeWatchFactory factory.WatchFactory
-
-			ovnController := NewOvnController(fakeClient, &fakeWatchFactory)
-			Expect(err).NotTo(HaveOccurred())
 			var (
 				okPod = v1.Pod{
 					TypeMeta: metav1.TypeMeta{
@@ -84,8 +82,7 @@ var _ = Describe("Add logical Port", func() {
 						APIVersion: "v1",
 					},
 					ObjectMeta: metav1.ObjectMeta{
-						Name:        "ok",
-						Annotations: map[string]string{"ovnNetwork": "[{ \"name\": \"ovn-prot-net\", \"interface\": \"net0\" , \"defaultGateway\": \"true\"}]"},
+						Name: "ok",
 					},
 					Spec: v1.PodSpec{
 						Containers: []v1.Container{
@@ -97,8 +94,8 @@ var _ = Describe("Add logical Port", func() {
 					},
 				}
 			)
-
-			ovnController.addLogicalPort(&okPod)
+			a := []map[string]interface{}{{"name": "ovn-prot-net", "interface": "net0"}}
+			ovnController.AddLogicalPorts(&okPod, a)
 			Expect(fexec.CommandCalls).To(Equal(len(fakeCmds)))
 
 			return nil
@@ -137,13 +134,14 @@ var _ = Describe("Add logical Port", func() {
 					return fmt.Sprintf("/fake-bin/%s", file), nil
 				},
 			}
-			err := SetExec(fexec)
+			oldSetupOvnUtils := SetupOvnUtils
+			// as we are exiting, revert ConfigureInterface back  at end of function
+			defer func() { SetupOvnUtils = oldSetupOvnUtils }()
+			SetupOvnUtils = func() error {
+				return nil
+			}
+			ovnController, err := NewOvnController(fexec)
 			Expect(err).NotTo(HaveOccurred())
-
-			fakeClient := &fake.Clientset{}
-			var fakeWatchFactory factory.WatchFactory
-
-			ovnController := NewOvnController(fakeClient, &fakeWatchFactory)
 			var (
 				okPod = v1.Pod{
 					TypeMeta: metav1.TypeMeta{
@@ -151,8 +149,7 @@ var _ = Describe("Add logical Port", func() {
 						APIVersion: "v1",
 					},
 					ObjectMeta: metav1.ObjectMeta{
-						Name:        "ok",
-						Annotations: map[string]string{"ovnNetwork": "[{ \"name\": \"ovn-prot-net\", \"interface\": \"net0\", \"netType\": \"provider\", \"ipAddress\": \"192.168.1.3/24\", \"macAddress\": \"0a:00:00:00:00:01\" }]"},
+						Name: "ok",
 					},
 					Spec: v1.PodSpec{
 						Containers: []v1.Container{
@@ -164,7 +161,8 @@ var _ = Describe("Add logical Port", func() {
 					},
 				}
 			)
-			ovnController.addLogicalPort(&okPod)
+			a := []map[string]interface{}{{"name": "ovn-prot-net", "interface": "net0", "netType": "provider", "ipAddress": "192.168.1.3/24", "macAddress": "0a:00:00:00:00:01"}}
+			ovnController.AddLogicalPorts(&okPod, a)
 			Expect(fexec.CommandCalls).To(Equal(len(fakeCmds)))
 
 			return nil

@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nfn-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: nfn-operator
+  template:
+    metadata:
+      labels:
+        name: nfn-operator
+    spec:
+      serviceAccountName: k8s-nfn-sa
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: nfnType
+                operator: In
+                values:
+                - operator
+      containers:
+        - name: nfn-operator
+          # Replace this with the built image name
+          image: rtsood/nfn-operator:latest
+          command:
+          - nfn-operator
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: HOST_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OPERATOR_NAME
+              value: "nfn-operator"

@@ -3,32 +3,42 @@ package ovn
 import (
 	"bytes"
 	"fmt"
+	kexec "k8s.io/utils/exec"
+	"os"
 	"strings"
 	"time"
-	"unicode"
-
-	"github.com/sirupsen/logrus"
-	kexec "k8s.io/utils/exec"
 )
 
 const (
 	ovsCommandTimeout = 15
-	ovsVsctlCommand   = "ovs-vsctl"
-	ovsOfctlCommand   = "ovs-ofctl"
 	ovnNbctlCommand   = "ovn-nbctl"
-	ipCommand         = "ip"
 )
 
 // Exec runs various OVN and OVS utilities
 type execHelper struct {
 	exec      kexec.Interface
-	ofctlPath string
-	vsctlPath string
 	nbctlPath string
-	ipPath    string
+	hostIP    string
+	hostPort  string
 }
 
 var runner *execHelper
+
+// SetupOvnUtils does internal OVN initialization
+var SetupOvnUtils = func() error {
+	runner.hostIP = os.Getenv("HOST_IP")
+	// OVN Host Port
+	runner.hostPort = "6641"
+	log.Info("Host Port", "IP", runner.hostIP, "Port", runner.hostPort)
+
+	// Setup Distributed Router
+	err := setupDistributedRouter(ovn4nfvRouterName)
+	if err != nil {
+		log.Error(err, "Failed to initialize OVN Distributed Router")
+		return err
+	}
+	return nil
+}
 
 // SetExec validates executable paths and saves the given exec interface
 // to be used for running various OVS and OVN utilites
@@ -36,19 +46,7 @@ func SetExec(exec kexec.Interface) error {
 	var err error
 
 	runner = &execHelper{exec: exec}
-	runner.ofctlPath, err = exec.LookPath(ovsOfctlCommand)
-	if err != nil {
-		return err
-	}
-	runner.vsctlPath, err = exec.LookPath(ovsVsctlCommand)
-	if err != nil {
-		return err
-	}
 	runner.nbctlPath, err = exec.LookPath(ovnNbctlCommand)
-	if err != nil {
-		return err
-	}
-	runner.ipPath, err = exec.LookPath(ipCommand)
 	if err != nil {
 		return err
 	}
@@ -65,7 +63,6 @@ func runOVNretry(cmdPath string, args ...string) (*bytes.Buffer, *bytes.Buffer, 
 		if err == nil {
 			return stdout, stderr, err
 		}
-
 		// Connection refused
 		// Master may not be up so keep trying
 		if strings.Contains(stderr.String(), "Connection refused") {
@@ -87,34 +84,29 @@ func run(cmdPath string, args ...string) (*bytes.Buffer, *bytes.Buffer, error) {
 	cmd := runner.exec.Command(cmdPath, args...)
 	cmd.SetStdout(stdout)
 	cmd.SetStderr(stderr)
-	logrus.Debugf("exec: %s %s", cmdPath, strings.Join(args, " "))
+	log.Info("exec:", "cmdPath", cmdPath, "args", strings.Join(args, " "))
 	err := cmd.Run()
 	if err != nil {
-		logrus.Debugf("exec: %s %s => %v", cmdPath, strings.Join(args, " "), err)
+		log.Error(err, "exec:", "cmdPath", cmdPath, "args", strings.Join(args, " "))
 	}
 	return stdout, stderr, err
 }
 
-// RunOVSVsctl runs a command via ovs-vsctl.
-func RunOVSVsctlUnix(args ...string) (string, string, error) {
-	cmdArgs := []string{fmt.Sprintf("--timeout=%d", ovsCommandTimeout)}
+// RunOVNSbctlWithTimeout runs command via ovn-nbctl with a specific timeout
+func RunOVNNbctlWithTimeout(timeout int, args ...string) (string, string, error) {
+	var cmdArgs []string
+	if len(runner.hostIP) > 0 {
+		cmdArgs = []string{
+			fmt.Sprintf("--db=tcp:%s:%s", runner.hostIP, runner.hostPort),
+		}
+	}
+	cmdArgs = append(cmdArgs, fmt.Sprintf("--timeout=%d", timeout))
 	cmdArgs = append(cmdArgs, args...)
-	stdout, stderr, err := run(runner.vsctlPath, cmdArgs...)
+	stdout, stderr, err := runOVNretry(runner.nbctlPath, cmdArgs...)
 	return strings.Trim(strings.TrimSpace(stdout.String()), "\""), stderr.String(), err
 }
 
-// RunOVNNbctlUnix runs command via ovn-nbctl, with ovn-nbctl using the unix
-// domain sockets to connect to the ovsdb-server backing the OVN NB database.
-func RunOVNNbctlUnix(args ...string) (string, string, error) {
-	cmdArgs := []string{fmt.Sprintf("--timeout=%d", ovsCommandTimeout)}
-	cmdArgs = append(cmdArgs, args...)
-	stdout, stderr, err := runOVNretry(runner.nbctlPath, cmdArgs...)
-	return strings.Trim(strings.TrimFunc(stdout.String(), unicode.IsSpace), "\""),
-		stderr.String(), err
-}
-
-// RunIP runs a command via the iproute2 "ip" utility
-func RunIP(args ...string) (string, string, error) {
-	stdout, stderr, err := run(runner.ipPath, args...)
-	return strings.TrimSpace(stdout.String()), stderr.String(), err
+// RunOVNNbctl runs a command via ovn-nbctl.
+func RunOVNNbctl(args ...string) (string, string, error) {
+	return RunOVNNbctlWithTimeout(ovsCommandTimeout, args...)
 }

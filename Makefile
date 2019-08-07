@@ -12,17 +12,18 @@ export GOPATH ...
 export GO111MODULE=on
 
 .PHONY: all 
-all: clean ovn4nfvk8s ovn4nfvk8s-cni
+all: clean nfn-operator  ovn4nfvk8s-cni
 
-ovn4nfvk8s:
-	@go build ./cmd/ovn4nfvk8s
+nfn-operator:
+	@go build -o build/bin/nfn-operator ./cmd/nfn-operator
 
 ovn4nfvk8s-cni:
-	@go build ./cmd/ovn4nfvk8s-cni
+	@go build -o build/bin/ovn4nfvk8s-cni ./cmd/ovn4nfvk8s-cni
 
 test:
 	@go test -v ./...
 
 clean:
-	@rm -f ovn4nfvk8s*
+	@rm -f build/bin/ovn4nfvk8s*
+	@rm -f build/bin/nfn-operator*
 

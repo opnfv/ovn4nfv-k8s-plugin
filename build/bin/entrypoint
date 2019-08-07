@@ -1,0 +1,27 @@
+#!/bin/sh -e
+
+
+cmd=${1:-""}
+
+case ${cmd} in
+   "cni")
+      CNI_BIN_DIR="/host/opt/cni/bin"
+      OVN4NFV_CONF_DIR="/host/etc/openvswitch"
+      OVN4NFV_BIN_FILE="/usr/local/bin/ovn4nfvk8s-cni"
+      OVN4NFV_CONF_FILE="/tmp/ovn4nfv-conf/ovn4nfv_k8s.conf"
+      cp -f $OVN4NFV_BIN_FILE $CNI_BIN_DIR
+      cp -f $OVN4NFV_CONF_FILE $OVN4NFV_CONF_DIR
+      # Sleep forever.
+      sleep infinity
+      ;;
+
+    "operator")
+      shift
+      exec ${OPERATOR} $@
+      ;;
+
+    *)
+      echo "invalid command ${cmd}"
+
+esac
+

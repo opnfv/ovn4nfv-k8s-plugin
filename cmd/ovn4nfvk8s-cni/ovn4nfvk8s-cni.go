@@ -26,6 +26,10 @@ import (
 	"ovn4nfv-k8s-plugin/internal/pkg/config"
 )
 
+const (
+	ovn4nfvAnnotationTag = "k8s.plugin.opnfv.org/ovnInterfaces"
+)
+
 func argString2Map(args string) (map[string]string, error) {
 	argsMap := make(map[string]string)
 
@@ -110,7 +114,7 @@ func addMultipleInterfaces(args *skel.CmdArgs, ovnAnnotation, namespace, podName
 	var ovnAnnotatedMap []map[string]string
 	ovnAnnotatedMap, err := parseOvnNetworkObject(ovnAnnotation)
 	if err != nil {
-		logrus.Errorf("addLogicalPort : Error Parsing Ovn Network List %v", ovnAnnotatedMap)
+		logrus.Errorf("addLogicalPort : Error Parsing Ovn Network List %v %v", ovnAnnotatedMap, err)
 		return nil
 	}
 	if namespace == "" || podName == "" {
@@ -275,7 +279,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 			logrus.Warningf("Error while obtaining pod annotations - %v", err)
 			return false, nil
 		}
-		if _, ok := annotation["ovnIfaceList"]; ok {
+		if _, ok := annotation[ovn4nfvAnnotationTag]; ok {
 			return true, nil
 		}
 		return false, nil
@@ -283,7 +287,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return fmt.Errorf("failed to get pod annotation - %v", err)
 	}
 	logrus.Infof("ovn4nfvk8s-cni: Annotation Found ")
-	ovnAnnotation, ok := annotation["ovnIfaceList"]
+	ovnAnnotation, ok := annotation[ovn4nfvAnnotationTag]
 	if !ok {
 		return fmt.Errorf("Error while obtaining pod annotations")
 	}
@@ -326,7 +330,7 @@ func main() {
 			return err
 		}
 
-		skel.PluginMain(cmdAdd, cmdDel, version.All)
+		skel.PluginMain(cmdAdd, nil, cmdDel, version.All, "")
 		return nil
 	}
 

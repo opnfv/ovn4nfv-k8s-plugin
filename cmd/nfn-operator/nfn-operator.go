@@ -10,7 +10,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"github.com/spf13/pflag"
-//	"ovn4nfv-k8s-plugin/pkg/apis"
+	"ovn4nfv-k8s-plugin/pkg/apis"
 	"ovn4nfv-k8s-plugin/internal/pkg/ovn"
 	"ovn4nfv-k8s-plugin/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -71,10 +71,10 @@ func main() {
 	log.Info("Registering Components.")
 
 	// Setup Scheme for all resources
-	//if err := apis.AddToScheme(mgr.GetScheme()); err != nil {
-	//	log.Error(err, "")
-	//	os.Exit(1)
-	//}
+	if err := apis.AddToScheme(mgr.GetScheme()); err != nil {
+		log.Error(err, "")
+		os.Exit(1)
+	}
 
 	// Setup all Controllers
 	if err := controller.AddToManager(mgr); err != nil {

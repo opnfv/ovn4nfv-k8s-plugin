@@ -84,15 +84,17 @@ func run(cmdPath string, args ...string) (*bytes.Buffer, *bytes.Buffer, error) {
 	cmd := runner.exec.Command(cmdPath, args...)
 	cmd.SetStdout(stdout)
 	cmd.SetStderr(stderr)
-	log.Info("exec:", "cmdPath", cmdPath, "args", strings.Join(args, " "))
+	log.V(1).Info("exec:", "cmdPath", cmdPath, "args", strings.Join(args, " "))
 	err := cmd.Run()
 	if err != nil {
-		log.Error(err, "exec:", "cmdPath", cmdPath, "args", strings.Join(args, " "))
+		log.Error(err, "Error:", "cmdPath", cmdPath, "args", strings.Join(args, " "), "stdout", stdout, "stderr", stderr)
+	} else {
+		log.V(1).Info("output:", "stdout", stdout)
 	}
 	return stdout, stderr, err
 }
 
-// RunOVNSbctlWithTimeout runs command via ovn-nbctl with a specific timeout
+// RunOVNNbctlWithTimeout runs command via ovn-nbctl with a specific timeout
 func RunOVNNbctlWithTimeout(timeout int, args ...string) (string, string, error) {
 	var cmdArgs []string
 	if len(runner.hostIP) > 0 {

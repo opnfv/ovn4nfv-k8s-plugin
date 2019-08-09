@@ -5,6 +5,9 @@ import (
 	"github.com/mitchellh/mapstructure"
 	kapi "k8s.io/api/core/v1"
 	kexec "k8s.io/utils/exec"
+	"math/rand"
+	"net"
+	k8sv1alpha1 "ovn4nfv-k8s-plugin/pkg/apis/k8s/v1alpha1"
 	"strings"
 	"time"
 )
@@ -14,7 +17,8 @@ type Controller struct {
 }
 
 const (
-	ovn4nfvRouterName    = "ovn4nfv-master"
+	ovn4nfvRouterName = "ovn4nfv-master"
+	// Ovn4nfvAnnotationTag tag on already processed Pods
 	Ovn4nfvAnnotationTag = "k8s.plugin.opnfv.org/ovnInterfaces"
 )
 
@@ -35,12 +39,10 @@ func NewOvnController(exec kexec.Interface) (*Controller, error) {
 	if exec == nil {
 		exec = kexec.New()
 	}
-
 	if err := SetExec(exec); err != nil {
 		log.Error(err, "Failed to initialize exec helper")
 		return nil, err
 	}
-
 	if err := SetupOvnUtils(); err != nil {
 		log.Error(err, "Failed to initialize OVN State")
 		return nil, err
@@ -71,7 +73,7 @@ func (oc *Controller) AddLogicalPorts(pod *kapi.Pod, ovnNetObjs []map[string]int
 	}
 
 	if _, ok := pod.Annotations[Ovn4nfvAnnotationTag]; ok {
-		log.Info("AddLogicalPorts : Pod annotation found")
+		log.V(1).Info("AddLogicalPorts : Pod annotation found")
 		return
 	}
 
@@ -86,7 +88,7 @@ func (oc *Controller) AddLogicalPorts(pod *kapi.Pod, ovnNetObjs []map[string]int
 			return
 		}
 
-		if !findLogicalSwitch(ns.Name) {
+		if !oc.FindLogicalSwitch(ns.Name) {
 			log.Info("Logical Switch not found")
 			return
 		}
@@ -111,7 +113,6 @@ func (oc *Controller) AddLogicalPorts(pod *kapi.Pod, ovnNetObjs []map[string]int
 			}
 
 		}
-
 		outStr = oc.addLogicalPortWithSwitch(pod, ns.Name, ns.IPAddress, ns.MacAddress, ns.Interface, ns.NetType)
 		if outStr == "" {
 			return
@@ -131,9 +132,9 @@ func (oc *Controller) AddLogicalPorts(pod *kapi.Pod, ovnNetObjs []map[string]int
 	return key, value
 }
 
+// DeleteLogicalPorts deletes the OVN ports for the pod
 func (oc *Controller) DeleteLogicalPorts(name, namespace string) {
 
-	log.Info("Deleting pod", "name", name)
 	logicalPort := fmt.Sprintf("%s_%s", namespace, name)
 
 	// get the list of logical ports from OVN
@@ -143,12 +144,11 @@ func (oc *Controller) DeleteLogicalPorts(name, namespace string) {
 		log.Error(err, "Error in obtaining list of logical ports ", "stdout", stdout, "stderr", stderr)
 		return
 	}
-	log.Info("Deleting", "Existing Ports", stdout)
 	existingLogicalPorts := strings.Fields(stdout)
 	for _, existingPort := range existingLogicalPorts {
 		if strings.Contains(existingPort, logicalPort) {
 			// found, delete this logical port
-			log.Info("Deleting", "existingPort", existingPort)
+			log.V(1).Info("Deleting", "Port", existingPort)
 			stdout, stderr, err := RunOVNNbctl("--if-exists", "lsp-del",
 				existingPort)
 			if err != nil {
@@ -159,11 +159,128 @@ func (oc *Controller) DeleteLogicalPorts(name, namespace string) {
 	return
 }
 
+// CreateNetwork in OVN controller
+func (oc *Controller) CreateNetwork(cr *k8sv1alpha1.Network) error {
+	var stdout, stderr string
+
+	// Currently only these fields are supported
+	name := cr.Name
+	subnet := cr.Spec.Ipv4Subnets[0].Subnet
+	gatewayIP := cr.Spec.Ipv4Subnets[0].Gateway
+	excludeIps := cr.Spec.Ipv4Subnets[0].ExcludeIps
+
+	output, stderr, err := RunOVNNbctl("--data=bare", "--no-heading",
+		"--columns=name", "find", "logical_switch", "name="+name)
+	if err != nil {
+		log.Error(err, "Error in reading logical switch", "stderr", stderr)
+		return nil
+	}
+
+	if strings.Compare(name, output) == 0 {
+		log.V(1).Info("Logical Switch already exists, delete first to update/recreate", "name", name)
+		return nil
+	}
+
+	_, cidr, err := net.ParseCIDR(subnet)
+	if err != nil {
+		log.Error(err, "ovnNetwork '%s' invalid subnet CIDR", "name", name)
+		return err
+
+	}
+	firstIP := NextIP(cidr.IP)
+	n, _ := cidr.Mask.Size()
+
+	var gatewayIPMask string
+	var gwIP net.IP
+	if gatewayIP != "" {
+		gwIP, _, err = net.ParseCIDR(gatewayIP)
+		if err != nil {
+			// Check if this is a valid IP address
+			gwIP = net.ParseIP(gatewayIP)
+		}
+	}
+	// If no valid Gateway use the first IP address for GatewayIP
+	if gwIP == nil {
+		gatewayIPMask = fmt.Sprintf("%s/%d", firstIP.String(), n)
+	} else {
+		gatewayIPMask = fmt.Sprintf("%s/%d", gwIP.String(), n)
+	}
+
+	// Create a logical switch and set its subnet.
+	if excludeIps != "" {
+		stdout, stderr, err = RunOVNNbctl("--wait=hv", "--", "--may-exist", "ls-add", name, "--", "set", "logical_switch", name, "other-config:subnet="+subnet, "external-ids:gateway_ip="+gatewayIPMask, "other-config:exclude_ips="+excludeIps)
+	} else {
+		stdout, stderr, err = RunOVNNbctl("--wait=hv", "--", "--may-exist", "ls-add", name, "--", "set", "logical_switch", name, "other-config:subnet="+subnet, "external-ids:gateway_ip="+gatewayIPMask)
+	}
+	if err != nil {
+		log.Error(err, "Failed to create a logical switch", "name", name, "stdout", stdout, "stderr", stderr)
+		return err
+	}
+
+	routerMac, stderr, err := RunOVNNbctl("--if-exist", "get", "logical_router_port", "rtos-"+name, "mac")
+	if err != nil {
+		log.Error(err, "Failed to get logical router port", "stderr", stderr)
+		return err
+	}
+	if routerMac == "" {
+		prefix := "00:00:00"
+		newRand := rand.New(rand.NewSource(time.Now().UnixNano()))
+		routerMac = fmt.Sprintf("%s:%02x:%02x:%02x", prefix, newRand.Intn(255), newRand.Intn(255), newRand.Intn(255))
+	}
+
+	_, stderr, err = RunOVNNbctl("--wait=hv", "--may-exist", "lrp-add", ovn4nfvRouterName, "rtos-"+name, routerMac, gatewayIPMask)
+	if err != nil {
+		log.Error(err, "Failed to add logical port to router", "stderr", stderr)
+		return err
+	}
+
+	// Connect the switch to the router.
+	stdout, stderr, err = RunOVNNbctl("--wait=hv", "--", "--may-exist", "lsp-add", name, "stor-"+name, "--", "set", "logical_switch_port", "stor-"+name, "type=router", "options:router-port=rtos-"+name, "addresses="+"\""+routerMac+"\"")
+	if err != nil {
+		log.Error(err, "Failed to add logical port to switch", "stderr", stderr, "stdout", stdout)
+		return err
+	}
+
+	return nil
+}
+
+// DeleteNetwork in OVN controller
+func (oc *Controller) DeleteNetwork(cr *k8sv1alpha1.Network) error {
+
+	name := cr.Name
+	stdout, stderr, err := RunOVNNbctl("--if-exist", "--wait=hv", "lrp-del", "rtos-"+name)
+	if err != nil {
+		log.Error(err, "Failed to delete router port", "name", name, "stdout", stdout, "stderr", stderr)
+		return err
+	}
+	stdout, stderr, err = RunOVNNbctl("--if-exist", "--wait=hv", "ls-del", name)
+	if err != nil {
+		log.Error(err, "Failed to delete switch", "name", name, "stdout", stdout, "stderr", stderr)
+		return err
+	}
+	return nil
+}
+
+// FindLogicalSwitch returns true if switch exists
+func (oc *Controller) FindLogicalSwitch(name string) bool {
+	// get logical switch from OVN
+	output, stderr, err := RunOVNNbctl("--data=bare", "--no-heading",
+		"--columns=name", "find", "logical_switch", "name="+name)
+	if err != nil {
+		log.Error(err, "Error in obtaining list of logical switch", "stderr", stderr)
+		return false
+	}
+	if strings.Compare(name, output) == 0 {
+		return true
+	}
+	return false
+}
+
 func (oc *Controller) getGatewayFromSwitch(logicalSwitch string) (string, string, error) {
 	var gatewayIPMaskStr, stderr string
 	var ok bool
 	var err error
-	log.Info("getGatewayFromSwitch", "logicalSwitch", logicalSwitch)
+	log.V(1).Info("getGatewayFromSwitch", "logicalSwitch", logicalSwitch)
 	if gatewayIPMaskStr, ok = oc.gatewayCache[logicalSwitch]; !ok {
 		gatewayIPMaskStr, stderr, err = RunOVNNbctl("--if-exists",
 			"get", "logical_switch", logicalSwitch,
@@ -203,7 +320,7 @@ func (oc *Controller) addLogicalPortWithSwitch(pod *kapi.Pod, logicalSwitch, ipA
 		return
 	}
 
-	log.Info("Creating logical port for on switch", "portName", portName, "logicalSwitch", logicalSwitch)
+	log.V(1).Info("Creating logical port for on switch", "portName", portName, "logicalSwitch", logicalSwitch)
 
 	if ipAddress != "" && macAddress != "" {
 		isStaticIP = true

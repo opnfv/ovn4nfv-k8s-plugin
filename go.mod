@@ -6,6 +6,7 @@ require (
 	github.com/containernetworking/cni v0.7.1
 	github.com/containernetworking/plugins v0.8.1
 	github.com/coreos/go-iptables v0.4.2 // indirect
+	github.com/go-logr/logr v0.1.0
 	github.com/google/btree v1.0.0 // indirect
 	github.com/gophercloud/gophercloud v0.2.0 // indirect
 	github.com/gregjones/httpcache v0.0.0-20190611155906-901d90724c79 // indirect

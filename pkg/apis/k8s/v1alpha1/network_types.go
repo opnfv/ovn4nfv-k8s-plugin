@@ -42,8 +42,10 @@ type DnsSpec struct {
 const (
 	//Created indicates the status of success
 	Created = "Created"
-	//Indicates internal Irrecoverable Error
-	InternalError = "InternalError"
+	//CreateInternalError indicates create internal irrecoverable Error
+	CreateInternalError = "CreateInternalError"
+	//DeleteInternalError indicates delete internal irrecoverable Error
+	DeleteInternalError = "DeleteInternalError"
 )
 
 // NetworkStatus defines the observed state of Network

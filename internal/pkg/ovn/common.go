@@ -7,7 +7,6 @@ import (
 	"math/rand"
 	"net"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
-	"strings"
 	"time"
 )
 
@@ -63,22 +62,6 @@ func setupDistributedRouter(name string) error {
 		return err
 	}
 	return nil
-}
-
-// Find if switch exists
-func findLogicalSwitch(name string) bool {
-	// get logical switch from OVN
-	output, stderr, err := RunOVNNbctl("--data=bare", "--no-heading",
-		"--columns=name", "find", "logical_switch", "name="+name)
-	if err != nil {
-		log.Error(err, "Error in obtaining list of logical switch", "stderr", stderr)
-		return false
-	}
-
-	if strings.Compare(name, output) == 0 {
-		return true
-	}
-	return false
 }
 
 // generateMac generates mac address.

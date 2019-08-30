@@ -72,11 +72,6 @@ func (oc *Controller) AddLogicalPorts(pod *kapi.Pod, ovnNetObjs []map[string]int
 		return
 	}
 
-	if _, ok := pod.Annotations[Ovn4nfvAnnotationTag]; ok {
-		log.V(1).Info("AddLogicalPorts : Pod annotation found")
-		return
-	}
-
 	var ovnString, outStr string
 	ovnString = "["
 	var ns netInterface

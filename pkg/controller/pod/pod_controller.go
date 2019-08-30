@@ -167,6 +167,9 @@ func (r *ReconcilePod) addLogicalPorts(pod *corev1.Pod) error {
 		if err != nil {
 			return err
 		}
+                if _, ok := pod.Annotations[ovn.Ovn4nfvAnnotationTag]; ok {
+			return fmt.Errorf("Pod annotation found")
+		}
 		key, value := ovnCtl.AddLogicalPorts(pod, nfn.Interface)
 		if len(key) > 0 {
 			return r.setPodAnnotation(pod, key, value)

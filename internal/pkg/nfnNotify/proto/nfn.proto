@@ -1,0 +1,44 @@
+//
+// nfn.proto
+// 
+// Example that implements push notification from grpc server to client
+//
+syntax = "proto3";
+
+service nfnNotify {
+	rpc Subscribe (SubscribeContext) returns (stream Notification);
+}
+
+message SubscribeContext {
+    string node_name = 1;
+}
+
+message Notification {
+    string cni_type = 1;
+    oneof payload {
+        InSync in_sync = 2;
+        ProviderNetworkCreate provider_nw_create = 3;
+        ProviderNetworkRemove provider_nw_remove = 4;
+    }
+}
+
+message ProviderNetworkCreate {
+    string provider_nw_name = 1;
+    VlanInfo vlan = 2;
+    // Add other types supported here beyond vlan
+}
+
+message ProviderNetworkRemove {
+    string provider_nw_name = 1;
+    string vlan_logical_intf = 2;
+    // Add other types supported here
+}
+
+message VlanInfo {
+    string vlan_id = 1;
+    string provider_intf = 2;
+    string logical_intf = 3;
+}
+
+message InSync {
+}

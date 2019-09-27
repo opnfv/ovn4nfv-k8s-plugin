@@ -10,8 +10,9 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"github.com/spf13/pflag"
-	"ovn4nfv-k8s-plugin/pkg/apis"
+	notif "ovn4nfv-k8s-plugin/internal/pkg/nfnNotify"
 	"ovn4nfv-k8s-plugin/internal/pkg/ovn"
+	"ovn4nfv-k8s-plugin/pkg/apis"
 	"ovn4nfv-k8s-plugin/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -48,8 +49,8 @@ func main() {
 	printVersion()
 
 	// Create an OVN Controller
-    _, err := ovn.NewOvnController(nil)
-    if err != nil {
+	_, err := ovn.NewOvnController(nil)
+	if err != nil {
 		log.Error(err, "")
 		os.Exit(1)
 	}
@@ -61,6 +62,10 @@ func main() {
 		log.Error(err, "")
 		os.Exit(1)
 	}
+
+	// Start GRPC Notification Server
+	go notif.SetupNotifServer(cfg)
+
 	// Create a new Cmd to provide shared dependencies and start components
 	mgr, err := manager.New(cfg, manager.Options{})
 	if err != nil {
@@ -88,4 +93,5 @@ func main() {
 		log.Error(err, "Manager exited non-zero")
 		os.Exit(1)
 	}
+
 }

@@ -23,10 +23,11 @@ type ProviderNetworkSpec struct {
 }
 
 type VlanSpec struct {
-	VlanId                string `json:"vlanId"`
-	Node                  string `json:"node"`
-	ProviderInterfaceName string `json:"providerInterfaceName"`
-	LogicalInterfaceName  string `json:"logicalInterfaceName,omitempty"`
+	VlanId                string   `json:"vlanId"`
+	VlanNodeSelector      string   `json:"vlanNodeSelector"`        // "all"/"any"(in which case a node will be randomly selected)/"specific"(see below)
+	NodeLabelList         []string `json:"nodeLabelList,omitempty"` // if VlanNodeSelector is value "specific" then this array provides a list of nodes labels
+	ProviderInterfaceName string   `json:"providerInterfaceName"`
+	LogicalInterfaceName  string   `json:"logicalInterfaceName,omitempty"`
 }
 
 // ProviderNetworkStatus defines the observed state of ProviderNetwork

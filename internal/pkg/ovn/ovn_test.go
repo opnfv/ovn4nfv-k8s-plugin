@@ -128,6 +128,11 @@ var _ = Describe("Add logical Port", func() {
 				Output: macIPAddress,
 			})
 
+			fakeCmds = ovntest.AddFakeCmd(fakeCmds, &ovntest.ExpectedCmd{
+				Cmd:    "ovn-nbctl --timeout=15 --if-exists get logical_switch " + netName + " external_ids:gateway_ip",
+				Output: gwCIDR,
+			})
+
 			fexec := &fakeexec.FakeExec{
 				CommandScript: fakeCmds,
 				LookPathFunc: func(file string) (string, error) {

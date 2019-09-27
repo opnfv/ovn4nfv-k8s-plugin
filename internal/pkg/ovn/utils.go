@@ -12,12 +12,16 @@ import (
 const (
 	ovsCommandTimeout = 15
 	ovnNbctlCommand   = "ovn-nbctl"
+	ovsVsctlCommand   = "ovs-vsctl"
+	ipCommand         = "ip"
 )
 
 // Exec runs various OVN and OVS utilities
 type execHelper struct {
 	exec      kexec.Interface
 	nbctlPath string
+	vsctlPath string
+	ipPath    string
 	hostIP    string
 	hostPort  string
 }
@@ -26,11 +30,6 @@ var runner *execHelper
 
 // SetupOvnUtils does internal OVN initialization
 var SetupOvnUtils = func() error {
-	runner.hostIP = os.Getenv("HOST_IP")
-	// OVN Host Port
-	runner.hostPort = "6641"
-	log.Info("Host Port", "IP", runner.hostIP, "Port", runner.hostPort)
-
 	// Setup Distributed Router
 	err := setupDistributedRouter(ovn4nfvRouterName)
 	if err != nil {
@@ -50,6 +49,19 @@ func SetExec(exec kexec.Interface) error {
 	if err != nil {
 		return err
 	}
+	runner.vsctlPath, err = exec.LookPath(ovsVsctlCommand)
+	if err != nil {
+		return err
+	}
+	runner.ipPath, err = exec.LookPath(ipCommand)
+	if err != nil {
+		return err
+	}
+	runner.hostIP = os.Getenv("HOST_IP")
+	// OVN Host Port
+	runner.hostPort = "6641"
+	log.Info("Host Port", "IP", runner.hostIP, "Port", runner.hostPort)
+
 	return nil
 }
 
@@ -87,7 +99,7 @@ func run(cmdPath string, args ...string) (*bytes.Buffer, *bytes.Buffer, error) {
 	log.V(1).Info("exec:", "cmdPath", cmdPath, "args", strings.Join(args, " "))
 	err := cmd.Run()
 	if err != nil {
-		log.Error(err, "Error:", "cmdPath", cmdPath, "args", strings.Join(args, " "), "stdout", stdout, "stderr", stderr)
+		log.Info("ovs", "Error:", err, "cmdPath", cmdPath, "args", strings.Join(args, " "), "stdout", stdout, "stderr", stderr)
 	} else {
 		log.V(1).Info("output:", "stdout", stdout)
 	}
@@ -111,4 +123,18 @@ func RunOVNNbctlWithTimeout(timeout int, args ...string) (string, string, error)
 // RunOVNNbctl runs a command via ovn-nbctl.
 func RunOVNNbctl(args ...string) (string, string, error) {
 	return RunOVNNbctlWithTimeout(ovsCommandTimeout, args...)
+}
+
+// RunIP runs a command via the iproute2 "ip" utility
+func RunIP(args ...string) (string, string, error) {
+	stdout, stderr, err := run(runner.ipPath, args...)
+	return strings.TrimSpace(stdout.String()), stderr.String(), err
+}
+
+// RunOVSVsctl runs a command via ovs-vsctl.
+func RunOVSVsctl(args ...string) (string, string, error) {
+	cmdArgs := []string{fmt.Sprintf("--timeout=%d", ovsCommandTimeout)}
+	cmdArgs = append(cmdArgs, args...)
+	stdout, stderr, err := run(runner.vsctlPath, cmdArgs...)
+	return strings.Trim(strings.TrimSpace(stdout.String()), "\""), stderr.String(), err
 }

@@ -3,14 +3,191 @@ package ovn
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/vishvananda/netlink"
 	"math/big"
 	"math/rand"
 	"net"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
+	"strings"
 	"time"
 )
 
 var log = logf.Log.WithName("ovn")
+
+// CreateVlan creates VLAN with vlanID
+func CreateVlan(vlanID, interfaceName, logicalInterfaceName string) error {
+	if interfaceName == "" || vlanID == "" || logicalInterfaceName == "" {
+		return fmt.Errorf("CreateVlan invalid parameters: %v %v %v", interfaceName, vlanID, logicalInterfaceName)
+	}
+	_, err := netlink.LinkByName(logicalInterfaceName)
+	if err == nil {
+		return err
+	}
+	stdout, stderr, err := RunIP("link", "add", "link", interfaceName, "name", logicalInterfaceName, "type", "vlan", "id", vlanID)
+	if err != nil {
+		log.Error(err, "Failed to create Vlan", "stdout", stdout, "stderr", stderr)
+		return err
+	}
+	stdout, stderr, err = RunIP("link", "set", logicalInterfaceName, "alias", "nfn-"+logicalInterfaceName)
+	if err != nil {
+		log.Error(err, "Failed to create Vlan", "stdout", stdout, "stderr", stderr)
+		return err
+	}
+	return nil
+}
+
+// DeleteVlan deletes VLAN with logicalInterface Name
+func DeleteVlan(logicalInterfaceName string) error {
+	if logicalInterfaceName == "" {
+		return fmt.Errorf("DeleteVlan invalid parameters")
+	}
+	stdout, stderr, err := RunIP("link", "del", "dev", logicalInterfaceName)
+	if err != nil {
+		log.Error(err, "Failed to create Vlan", "stdout", stdout, "stderr", stderr)
+		return err
+	}
+	return nil
+}
+
+// GetVlan returns a list of VLAN configured on the node
+func GetVlan() []string {
+	var intfList []string
+	links, err := netlink.LinkList()
+	if err != nil {
+
+	}
+	for _, l := range links {
+		if strings.Contains(l.Attrs().Alias, "nfn-") {
+			intfList = append(intfList, l.Attrs().Name)
+		}
+	}
+	return intfList
+}
+
+// CreatePnBridge creates Provider network bridge and mappings
+func CreatePnBridge(nwName, brName, intfName string) error {
+	if nwName == "" || brName == "" || intfName == "" {
+		return fmt.Errorf("CreatePnBridge invalid parameters")
+	}
+	// Create Bridge
+	stdout, stderr, err := RunOVSVsctl("--may-exist", "add-br", brName)
+	if err != nil {
+		log.Error(err, "Failed to create Bridge", "stdout", stdout, "stderr", stderr)
+		return err
+	}
+	stdout, stderr, err = RunOVSVsctl("--may-exist", "add-port", brName, intfName)
+	if err != nil {
+		log.Error(err, "Failed to add port to Bridge", "stdout", stdout, "stderr", stderr)
+		return err
+	}
+	stdout, stderr, err = RunOVSVsctl("set", "bridge", brName, "external_ids:nfn="+nwName)
+	if err != nil {
+		log.Error(err, "Failed to set nfn-alias", "stdout", stdout, "stderr", stderr)
+		return err
+	}
+	// Update ovn-bridge-mappings
+	updateOvnBridgeMapping(brName, nwName, "add")
+	return nil
+}
+
+// DeletePnBridge creates Provider network bridge and mappings
+func DeletePnBridge(nwName, brName string) error {
+	if nwName == "" || brName == "" {
+		return fmt.Errorf("DeletePnBridge invalid parameters")
+	}
+	// Delete Bridge
+	stdout, stderr, err := RunOVSVsctl("--if-exist", "del-br", brName)
+	if err != nil {
+		log.Error(err, "Failed to delete Bridge", "stdout", stdout, "stderr", stderr)
+		return err
+	}
+	updateOvnBridgeMapping(brName, nwName, "delete")
+
+	return nil
+}
+
+// GetPnBridge returns Provider networks with external ids
+func GetPnBridge(externalID string) []string {
+	if externalID == "" {
+		log.Error(fmt.Errorf("GetBridge invalid parameters"), "Invalid")
+	}
+	stdout, stderr, err := RunOVSVsctl("list-br")
+	if err != nil {
+		log.Error(err, "No bridges found", "stdout", stdout, "stderr", stderr)
+		return nil
+	}
+	brNames := strings.Split(stdout, "\n")
+	var brList []string
+	for _, name := range brNames {
+		stdout, stderr, err = RunOVSVsctl("get", "bridge", name, "external_ids:"+externalID)
+		if err != nil {
+			if !strings.Contains(stderr, "no key") {
+				log.Error(err, "Unknown error reading external_ids", "stdout", stdout, "stderr", stderr)
+			}
+			continue
+		}
+		if stdout == "" {
+			continue
+		} else {
+			brList = append(brList, name)
+		}
+	}
+	return brList
+}
+
+// Update ovn-bridge-mappings
+func updateOvnBridgeMapping(brName, nwName, action string) error {
+	stdout, stderr, err := RunOVSVsctl("get", "open", ".", "external-ids:ovn-bridge-mappings")
+	if err != nil {
+		if !strings.Contains(stderr, "no key") {
+			log.Error(err, "Failed to get ovn-bridge-mappings", "stdout", stdout, "stderr", stderr)
+			return err
+		}
+	}
+	// Convert csv string to map
+	mm := make(map[string]string)
+	if len(stdout) > 0 {
+		am := strings.Split(stdout, ",")
+		for _, label := range am {
+			l := strings.Split(label, ":")
+			if len(l) == 0 {
+				log.Error(fmt.Errorf("Syntax error label: %v", label), "ovnBridgeMapping")
+				return nil
+			}
+			mm[strings.TrimSpace(l[0])] = strings.TrimSpace(l[1])
+		}
+	}
+	if action == "add" {
+		mm[nwName] = brName
+	} else if action == "delete" {
+		delete(mm, nwName)
+		if len(mm) == 0 {
+			// No mapping needed
+			stdout, stderr, err = RunOVSVsctl("remove", "open", ".", "external-ids", "ovn-bridge-mappings")
+			if err != nil {
+				log.Error(err, "Failed to remove ovn-bridge-mappings", "stdout", stdout, "stderr", stderr)
+				return err
+			}
+			return nil
+		}
+	} else {
+		return fmt.Errorf("Invalid action %s", action)
+	}
+	var mapping string
+	for key, value := range mm {
+		mapping = mapping + fmt.Sprintf("%s:%s,", key, value)
+	}
+	// Remove trailing ,
+	mapping = mapping[:len(mapping)-1]
+	extIDMap := "external-ids:ovn-bridge-mappings=" + mapping
+
+	stdout, stderr, err = RunOVSVsctl("set", "open", ".", extIDMap)
+	if err != nil {
+		log.Error(err, "Failed to set ovn-bridge-mappings", "stdout", stdout, "stderr", stderr)
+		return err
+	}
+	return nil
+}
 
 func parseOvnNetworkObject(ovnnetwork string) ([]map[string]interface{}, error) {
 	var ovnNet []map[string]interface{}

@@ -4,13 +4,12 @@ import (
 	"context"
 	"fmt"
 	k8sv1alpha1 "ovn4nfv-k8s-plugin/pkg/apis/k8s/v1alpha1"
-
-	//	corev1 "k8s.io/api/core/v1"
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"ovn4nfv-k8s-plugin/internal/pkg/ovn"
 	"ovn4nfv-k8s-plugin/pkg/utils"
+	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -111,7 +110,7 @@ func (r *ReconcileNetwork) createNetwork(cr *k8sv1alpha1.Network, reqLogger logr
 			return err
 		}
 		err = ovnCtl.CreateNetwork(cr)
-		if err != nil {
+		if err != nil && !reflect.DeepEqual(err, fmt.Errorf("LS exists")) {
 			// Log the error
 			reqLogger.Error(err, "Error Creating Network")
 			cr.Status.State = k8sv1alpha1.CreateInternalError

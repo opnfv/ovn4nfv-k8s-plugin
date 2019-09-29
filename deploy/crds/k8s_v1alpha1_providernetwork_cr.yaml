@@ -1,0 +1,19 @@
+apiVersion: k8s.plugin.opnfv.org/v1alpha1
+kind: ProviderNetwork
+metadata:
+  name: pnetwork
+spec:
+  cniType: ovn4nfv
+  ipv4Subnets:
+  - subnet: 172.16.33.0/24
+    name: subnet1
+    gateway: 172.16.33.1/24
+    excludeIps: 172.16.33.2 172.16.33.5..172.16.33.10
+  providerNetType: VLAN
+  vlan:
+    vlanId: "100"
+    providerInterfaceName: eth1
+    logicalInterfaceName: eth1.100
+    vlanNodeSelector: specific
+    nodeLabelList:
+    - kubernetes.io/hostname=testnode1 

@@ -101,15 +101,23 @@ spec:
               properties:
                 logicalInterfaceName:
                   type: string
-                node:
-                  type: string
+                nodeLabelList:
+                  description: '"all"/"any"(in which case a node will be randomly
+                    selected)/"specific"(see below)'
+                  items:
+                    type: string
+                  type: array
                 providerInterfaceName:
+                  description: if VlanNodeSelector is value "specific" then this array
+                    provides a list of nodes labels
                   type: string
                 vlanId:
                   type: string
+                vlanNodeSelector:
+                  type: string
               required:
               - vlanId
-              - node
+              - vlanNodeSelector
               - providerInterfaceName
               type: object
           required:

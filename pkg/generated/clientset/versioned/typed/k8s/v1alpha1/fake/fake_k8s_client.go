@@ -33,6 +33,10 @@ func (c *FakeK8sV1alpha1) Networks(namespace string) v1alpha1.NetworkInterface {
 	return &FakeNetworks{c, namespace}
 }
 
+func (c *FakeK8sV1alpha1) NetworkChainings(namespace string) v1alpha1.NetworkChainingInterface {
+	return &FakeNetworkChainings{c, namespace}
+}
+
 func (c *FakeK8sV1alpha1) ProviderNetworks(namespace string) v1alpha1.ProviderNetworkInterface {
 	return &FakeProviderNetworks{c, namespace}
 }

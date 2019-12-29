@@ -19,7 +19,6 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"k8s.io/apimachinery/pkg/runtime/serializer"
 	v1alpha1 "ovn4nfv-k8s-plugin/pkg/apis/k8s/v1alpha1"
 	"ovn4nfv-k8s-plugin/pkg/generated/clientset/versioned/scheme"
 
@@ -29,6 +28,7 @@ import (
 type K8sV1alpha1Interface interface {
 	RESTClient() rest.Interface
 	NetworksGetter
+	NetworkChainingsGetter
 	ProviderNetworksGetter
 }
 
@@ -39,6 +39,10 @@ type K8sV1alpha1Client struct {
 
 func (c *K8sV1alpha1Client) Networks(namespace string) NetworkInterface {
 	return newNetworks(c, namespace)
+}
+
+func (c *K8sV1alpha1Client) NetworkChainings(namespace string) NetworkChainingInterface {
+	return newNetworkChainings(c, namespace)
 }
 
 func (c *K8sV1alpha1Client) ProviderNetworks(namespace string) ProviderNetworkInterface {
@@ -77,8 +81,7 @@ func setConfigDefaults(config *rest.Config) error {
 	gv := v1alpha1.SchemeGroupVersion
 	config.GroupVersion = &gv
 	config.APIPath = "/apis"
-	//config.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
-	config.NegotiatedSerializer = serializer.DirectCodecFactory{CodecFactory: scheme.Codecs}
+	config.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
 
 	if config.UserAgent == "" {
 		config.UserAgent = rest.DefaultKubernetesUserAgent()

@@ -26,6 +26,14 @@ type NetworkListerExpansion interface{}
 // NetworkNamespaceLister.
 type NetworkNamespaceListerExpansion interface{}
 
+// NetworkChainingListerExpansion allows custom methods to be added to
+// NetworkChainingLister.
+type NetworkChainingListerExpansion interface{}
+
+// NetworkChainingNamespaceListerExpansion allows custom methods to be added to
+// NetworkChainingNamespaceLister.
+type NetworkChainingNamespaceListerExpansion interface{}
+
 // ProviderNetworkListerExpansion allows custom methods to be added to
 // ProviderNetworkLister.
 type ProviderNetworkListerExpansion interface{}

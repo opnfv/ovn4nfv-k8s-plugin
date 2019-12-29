@@ -55,6 +55,8 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 	// Group=k8s.plugin.opnfv.org, Version=v1alpha1
 	case v1alpha1.SchemeGroupVersion.WithResource("networks"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.K8s().V1alpha1().Networks().Informer()}, nil
+	case v1alpha1.SchemeGroupVersion.WithResource("networkchainings"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.K8s().V1alpha1().NetworkChainings().Informer()}, nil
 	case v1alpha1.SchemeGroupVersion.WithResource("providernetworks"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.K8s().V1alpha1().ProviderNetworks().Informer()}, nil
 

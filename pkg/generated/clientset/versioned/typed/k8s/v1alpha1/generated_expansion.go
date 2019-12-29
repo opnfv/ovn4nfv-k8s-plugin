@@ -20,4 +20,6 @@ package v1alpha1
 
 type NetworkExpansion interface{}
 
+type NetworkChainingExpansion interface{}
+
 type ProviderNetworkExpansion interface{}

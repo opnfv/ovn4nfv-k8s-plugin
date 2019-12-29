@@ -58,7 +58,7 @@ type NetworkStatus struct {
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-
+// +genclient
 // Network is the Schema for the networks API
 // +k8s:openapi-gen=true
 // +kubebuilder:subresource:status

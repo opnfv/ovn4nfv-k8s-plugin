@@ -26,6 +26,8 @@ import (
 type Interface interface {
 	// Networks returns a NetworkInformer.
 	Networks() NetworkInformer
+	// NetworkChainings returns a NetworkChainingInformer.
+	NetworkChainings() NetworkChainingInformer
 	// ProviderNetworks returns a ProviderNetworkInformer.
 	ProviderNetworks() ProviderNetworkInformer
 }
@@ -44,6 +46,11 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 // Networks returns a NetworkInformer.
 func (v *version) Networks() NetworkInformer {
 	return &networkInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
+// NetworkChainings returns a NetworkChainingInformer.
+func (v *version) NetworkChainings() NetworkChainingInformer {
+	return &networkChainingInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // ProviderNetworks returns a ProviderNetworkInformer.

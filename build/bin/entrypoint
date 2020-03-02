@@ -1,32 +1,101 @@
-#!/bin/sh -e
+#!/bin/bash
+set -e
+CNI_VERSION=${CNI_VERSION:-"v0.8.5"}
+IMAGE_ARC=${IMAGE_ARC:-"amd64"}
+
+create_kubeconfig() {
+    # Make a ovn4nfv.d directory (for our kubeconfig)
+    # Inspired from t.ly/Xgbbe
+    mkdir -p $CNI_CONF_DIR/ovn4nfv-k8s.d
+    OVN4NFV_KUBECONFIG=$CNI_CONF_DIR/ovn4nfv-k8s.d/ovn4nfv-k8s.kubeconfig
+    SERVICE_ACCOUNT_PATH=/var/run/secrets/kubernetes.io/serviceaccount
+    KUBE_CA_FILE=${KUBE_CA_FILE:-$SERVICE_ACCOUNT_PATH/ca.crt}
+    SERVICEACCOUNT_TOKEN=$(cat $SERVICE_ACCOUNT_PATH/token)
+    SKIP_TLS_VERIFY=${SKIP_TLS_VERIFY:-false}
+
+    # Check if we're running as a k8s pod.
+    if [ -f "$SERVICE_ACCOUNT_PATH/token" ]; then
+        # We're running as a k8d pod - expect some variables.
+        if [ -z ${KUBERNETES_SERVICE_HOST} ]; then
+            error "KUBERNETES_SERVICE_HOST not set"; exit 1;
+        fi
+        if [ -z ${KUBERNETES_SERVICE_PORT} ]; then
+            error "KUBERNETES_SERVICE_PORT not set"; exit 1;
+        fi
+
+        if [ "$SKIP_TLS_VERIFY" == "true" ]; then
+            TLS_CFG="insecure-skip-tls-verify: true"
+        elif [ -f "$KUBE_CA_FILE" ]; then
+            TLS_CFG="certificate-authority-data: $(cat $KUBE_CA_FILE | base64 | tr -d '\n')"
+        fi
+
+        # Write a kubeconfig file for the CNI plugin.  Do this
+        # to skip TLS verification for now.  We should eventually support
+        # writing more complete kubeconfig files. This is only used
+        # if the provided CNI network config references it.
+        touch $OVN4NFV_KUBECONFIG
+        chmod ${KUBECONFIG_MODE:-600} $OVN4NFV_KUBECONFIG
+        cat > $OVN4NFV_KUBECONFIG <<EOF
+# Kubeconfig file for OVN4NFV-K8S CNI plugin.
+apiVersion: v1
+kind: Config
+clusters:
+- name: local
+  cluster:
+    server: ${KUBERNETES_SERVICE_PROTOCOL:-https}://[${KUBERNETES_SERVICE_HOST}]:${KUBERNETES_SERVICE_PORT}
+    $TLS_CFG
+users:
+- name: ovn4nfv
+  user:
+    token: "${SERVICEACCOUNT_TOKEN}"
+contexts:
+- name: ovn4nfv-context
+  context:
+    cluster: local
+    user: ovn4nfv
+current-context: ovn4nfv-context
+EOF
+    else
+        warn "Doesn't look like we're running in a kubernetes environment (no serviceaccount token)"
+    fi
+}
+
+install_cni_plugins() {
+    curl --insecure --compressed -O -L https://github.com/containernetworking/plugins/releases/download/$CNI_VERSION/cni-plugins-linux-$IMAGE_ARC-$CNI_VERSION.tgz
+    tar -zxvf cni-plugins-linux-$IMAGE_ARC-$CNI_VERSION.tgz -C $CNI_BIN_DIR
+    rm -rf cni-plugins-linux-$IMAGE_ARC-$CNI_VERSION.tgz
+}
 
 cmd=${1:-""}
 
 case ${cmd} in
-   "cni")
-      CNI_BIN_DIR="/host/opt/cni/bin"
-      OVN4NFV_CONF_DIR="/host/etc/openvswitch"
-      OVN4NFV_BIN_FILE="/usr/local/bin/ovn4nfvk8s-cni"
-      OVN4NFV_CONF_FILE="/tmp/ovn4nfv-conf/ovn4nfv_k8s.conf"
-      cp -f $OVN4NFV_BIN_FILE $CNI_BIN_DIR
-      cp -f $OVN4NFV_CONF_FILE $OVN4NFV_CONF_DIR
-      # Sleep forever.
-      sleep infinity
-      ;;
+    "cni")
+        CNI_BIN_DIR="/host/opt/cni/bin"
+        OVN4NFV_CONF_DIR="/host/etc/openvswitch"
+        OVN4NFV_BIN_FILE="/usr/local/bin/ovn4nfvk8s-cni"
+        OVN4NFV_CONF_FILE="/tmp/ovn4nfv-conf/ovn4nfv_k8s.conf"
+        OVN4NFV_NET_CONF_FILE="/tmp/ovn4nfv-cni/00-network.conf"
+        CNI_CONF_DIR="/host/etc/cni/net.d"
+
+        cp -f $OVN4NFV_BIN_FILE $CNI_BIN_DIR
+        cp -f $OVN4NFV_CONF_FILE $OVN4NFV_CONF_DIR
+        cp -f $OVN4NFV_NET_CONF_FILE $CNI_CONF_DIR
+        create_kubeconfig
+        install_cni_plugins
+        # Sleep forever.
+        sleep infinity
+    ;;
 
     "operator")
-      shift
-      exec ${OPERATOR} $@
-      ;;
+        shift
+        exec ${OPERATOR} $@
+    ;;
 
     "agent")
-      shift
-      exec ${AGENT} $@
-      ;;
-
-
+        shift
+        exec ${AGENT} $@
+    ;;
     *)
-      echo "invalid command ${cmd}"
-
+        echo "invalid command ${cmd}"
 esac
 

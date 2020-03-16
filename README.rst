@@ -10,7 +10,7 @@
    limitations under the License.
 
 =================
-OVN4NFVK8s Plugin
+OVN4NFVK8s Plugin/nfn-operator (Network Function Networking operator)
 =================
 
 Problem statement
@@ -63,10 +63,10 @@ NFV workloads can be,
 - NFV workloads require dynamic creation of virtual networks. Dynamic
   configuration of subnets.
 
-New Proposal
-------------
+ovn4nfvk8s Plugin
+-----------------
 
-A new plugin addresses the below requirements, for networking
+This plugin addresses the below requirements, for networking
 workloads as well typical application workloads
 - Multi-interface support
 - Multi-IP address support
@@ -84,19 +84,33 @@ desirable features. Just like OVS, OVN’s design goal is to have a
 production quality implementation that can operate at significant
 scale.
 
-**OVN4NFVK8s Plugin development**
+**OVN4NFVK8s Plugin/ NFN-Operator development**
 
 ovn-kubernetes_ plugin is part of OVN project which provides OVN
 integration with Kubernetes but doesn't address the requirements
 as given above. To meet those requirements like multiple interfaces,
-IPs, dynamic creation of virtual networks, etc., OVN4NFVK8s plugin is
-created. It assumes that it will be used in conjuction with Multus_
-or other similar CNI which allows for the co-existance of multiple
-CNI plugins in runtime. This plugin assumes that the first interface
-in a Pod is provided by some other Plugin/CNI like Flannel or even
-OVN-Kubernetes. It is only responsible to add multiple interfaces
-based on the Pod annotations. The code is based on ovn-kubernetes_.
+IPs, dynamic creation of virtual networks, etc., OVN4NFVK8s plugin/
+nfn-operator is created. It assumes that it will be used in
+conjuction with Multus_or other similar CNI which allows for the
+co-existance of multipleCNI plugins in runtime. This plugin assumes
+that the first interface in a Pod is provided by some other Plugin/CNI
+like Flannel or even OVN-Kubernetes. It is only responsible to add
+multiple interfacesbased on the Pod annotations. The code is based on
+ovn-kubernetes_.
 
+NFN-Operator has following functionalities:
+1) It watches pods for annotations (see below)
+2) It is a CRD Controller for dynamic networks, provider networks and
+   dynamic route creation.
+3) It is a gRPC server for nfn-agent running on all nodes in the cluster
+
+nfn-operator uses operator-sdk and controller runtime for watching for
+pods and also other CR's. For creating dynamic logical networks Network
+CRD controller creates OVN logical switch as defined in CR. For provider
+network creation Provider Network CRD controller works with nfn-agent
+running on nodes to create provider network. nfn-operator communicates
+with nfn agent using gRPC. Currently only VLAN based provider networks
+are supported.
 
 .. note::
 
@@ -112,14 +126,15 @@ a Pod annotation like below is required when working with Multus:
 
   annotations:
      k8s.v1.cni.cncf.io/networks: '[{ "name": "ovn-networkobj"}]'
-     ovnNetwork '[
+     k8s.plugin.opnfv.org/nfn-network: '{ "type": "ovn4nfv", "interface": [
          { "name": <name of OVN Logical Switch>, "interfaceRequest": "eth1" },
          { "name":  <name of OVN Logical Switch>, "interfaceRequest": "eth2" }
-  ]'
+  ]}'
 
-Based on these annotations watcher service in OVN4NFVK8s plugin assumes
-logical switch is already present. Dynamic IP addresses are assigned
-(static IP's also supported) and annotations are updated.
+Based on these annotations watcher service in OVN4NFVK8s plugin/
+nfn-operator assumes logical switch is already present. Dynamic IP
+addresses are assigned (static IP's also supported) and annotations
+are updated.
 
 When the Pod is initialized on a node, OVN4NFVK8s CNI creates multiple
 interfaces and assigns IP addresses for the pod based on the annotations.
@@ -177,10 +192,10 @@ For building the project:
   make
 
 
-This will output two files ovn4nfvk8s and ovn4nfvk8s-cni which are the plugin
- and CNI binaries respectively.
+This will output two files nfn-operator, nfn-agent and ovn4nfvk8s-cni which are the plugin/
+ operator, gRPC client and CNI binaries respectively.
 
-ovn4nfvk8s plugin requires some configuration at start up.
+ovn4nfvk8s-cni requires some configuration at start up.
 
 Example configuration file (default location/etc/openvswitch/ovn4nfv_k8s.conf)
 
@@ -199,7 +214,71 @@ Example configuration file (default location/etc/openvswitch/ovn4nfv_k8s.conf)
 
 
 
+**CRD Controllers**
+
+
+nfn-operator includes controllers for 3 types of CRDs:
+
+1) Network CRD - To create logical networks.
+
+2) Provider Network CRD - To Create Provider networks. This works along with nfn-agent
+   to create provider networks on nodes in cluster as needed.
+
+3) Chaining operator - To provision routes in Pods as per CR definition.
+
+
+
+**Network CR Example**
+
+
+.. code-block:: yaml
+
+  apiVersion: k8s.plugin.opnfv.org/v1alpha1
+  kind: Network
+  metadata:
+    name: example-network
+  spec:
+    # Add fields here
+    cniType: ovn4nfv
+    ipv4Subnets:
+    - subnet: 172.16.44.0/24
+      name: subnet1
+      gateway: 172.16.44.1/24
+      excludeIps: 172.16.44.2 172.16.44.5..172.16.44.10
+
+
+
+**Provider Network CR Example**
+
+
+.. code-block:: yaml
+
+  apiVersion: k8s.plugin.opnfv.org/v1alpha1
+  kind: ProviderNetwork
+  metadata:
+    name: pnetwork
+  spec:
+    cniType: ovn4nfv
+    ipv4Subnets:
+    - subnet: 172.16.33.0/24
+      name: subnet1
+      excludeIps: 172.16.33.2 172.16.33.5..172.16.33.10
+    providerNetType: VLAN
+    vlan:
+      vlanId: "100"
+      providerInterfaceName: eth1
+      logicalInterfaceName: eth1.100
+      vlanNodeSelector: specific
+      nodeLabelList:
+      - kubernetes.io/hostname=testnode1
+
+**Chaining CR Example**
+
+TODO
+
+
 **Figure**
+
 
 .. code-block:: raw
 
@@ -244,3 +323,4 @@ Example configuration file (default location/etc/openvswitch/ovn4nfv_k8s.conf)
 
 Addepalli, Srinivasa R <srinivasa.r.addepalli@intel.com>
 Sood, Ritu <ritu.sood@intel.com>
+

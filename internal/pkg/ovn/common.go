@@ -33,6 +33,11 @@ func CreateVlan(vlanID, interfaceName, logicalInterfaceName string) error {
 		log.Error(err, "Failed to create Vlan", "stdout", stdout, "stderr", stderr)
 		return err
 	}
+        stdout, stderr, err = RunIP("link", "set", "dev", logicalInterfaceName, "up")
+        if err != nil {
+                log.Error(err, "Failed to enable Vlan", "stdout", stdout, "stderr", stderr)
+                return err
+        }
 	return nil
 }
 

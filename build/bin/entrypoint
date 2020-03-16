@@ -1,6 +1,5 @@
 #!/bin/sh -e
 
-
 cmd=${1:-""}
 
 case ${cmd} in
@@ -19,6 +18,12 @@ case ${cmd} in
       shift
       exec ${OPERATOR} $@
       ;;
+
+    "agent")
+      shift
+      exec ${AGENT} $@
+      ;;
+
 
     *)
       echo "invalid command ${cmd}"

@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y -qq apt-transport-https curl \
 
 
 ENV OPERATOR=/usr/local/bin/nfn-operator \
+    AGENT=/usr/local/bin/nfn-agent \
     USER_UID=1001 \
     USER_NAME=nfn-operator
 

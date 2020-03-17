@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os/exec"
-	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -37,7 +37,7 @@ func renameLink(curName, newName string) error {
 	return nil
 }
 
-func setupInterface(netns ns.NetNS, containerID, ifName, macAddress, ipAddress, gatewayIP, defaultGateway string, mtu int) (*current.Interface, *current.Interface, error) {
+func setupInterface(netns ns.NetNS, containerID, ifName, macAddress, ipAddress, gatewayIP, defaultGateway string, idx, mtu int) (*current.Interface, *current.Interface, error) {
 	hostIface := &current.Interface{}
 	contIface := &current.Interface{}
 
@@ -97,9 +97,7 @@ func setupInterface(netns ns.NetNS, containerID, ifName, macAddress, ipAddress, 
 	}
 
 	// rename the host end of veth pair
-	re := regexp.MustCompile("(\\d+)\\D*\\z")
-	index := re.FindAllString(ifName, -1)
-	hostIface.Name = containerID[:14] + index[0]
+	hostIface.Name = containerID[:14] + strconv.Itoa(idx)
 	if err := renameLink(oldHostVethName, hostIface.Name); err != nil {
 		return nil, nil, fmt.Errorf("failed to rename %s to %s: %v", oldHostVethName, hostIface.Name, err)
 	}
@@ -108,21 +106,24 @@ func setupInterface(netns ns.NetNS, containerID, ifName, macAddress, ipAddress, 
 }
 
 // ConfigureInterface sets up the container interface
-var ConfigureInterface = func(args *skel.CmdArgs, namespace, podName, macAddress, ipAddress, gatewayIP, interfaceName, defaultGateway string, mtu int) ([]*current.Interface, error) {
+var ConfigureInterface = func(args *skel.CmdArgs, namespace, podName, macAddress, ipAddress, gatewayIP, interfaceName, defaultGateway string, idx, mtu int) ([]*current.Interface, error) {
 	netns, err := ns.GetNS(args.Netns)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open netns %q: %v", args.Netns, err)
 	}
 	defer netns.Close()
-	hostIface, contIface, err := setupInterface(netns, args.ContainerID, interfaceName, macAddress, ipAddress, gatewayIP, defaultGateway, mtu)
-	if err != nil {
-		return nil, err
-	}
+
 	var ifaceID string
-	if interfaceName != "" {
+	if interfaceName != "*" {
 		ifaceID = fmt.Sprintf("%s_%s_%s", namespace, podName, interfaceName)
 	} else {
 		ifaceID = fmt.Sprintf("%s_%s", namespace, podName)
+		interfaceName = args.IfName
+		defaultGateway = "true"
+	}
+	hostIface, contIface, err := setupInterface(netns, args.ContainerID, interfaceName, macAddress, ipAddress, gatewayIP, defaultGateway, idx, mtu)
+	if err != nil {
+		return nil, err
 	}
 
 	ovsArgs := []string{

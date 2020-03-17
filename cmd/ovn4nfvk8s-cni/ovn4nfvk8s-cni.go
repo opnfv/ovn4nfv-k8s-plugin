@@ -142,8 +142,7 @@ func addMultipleInterfaces(args *skel.CmdArgs, ovnAnnotation, namespace, podName
 			logrus.Errorf("addMultipleInterfaces: interface can't be null")
 			return nil
 		}
-		logrus.Debugf("addMultipleInterfaces: ipAddress %v %v", ipAddress, interfaceName)
-		interfacesArray, err = app.ConfigureInterface(args, namespace, podName, macAddress, ipAddress, gatewayIP, interfaceName, defaultGateway, config.Default.MTU)
+		interfacesArray, err = app.ConfigureInterface(args, namespace, podName, macAddress, ipAddress, gatewayIP, interfaceName, defaultGateway, index, config.Default.MTU)
 		if err != nil {
 			logrus.Errorf("Failed to configure interface in pod: %v", err)
 			return nil
@@ -318,7 +317,7 @@ func cmdDel(args *skel.CmdArgs) error {
 }
 
 func main() {
-	logrus.Infof("ovn4nfvk8s-cni CNI Invoked by Multus")
+	logrus.Infof("ovn4nfvk8s-cni invoked")
 	c := cli.NewApp()
 	c.Name = "ovn4nfvk8s-cni"
 	c.Usage = "a CNI plugin to set up or tear down a additional interfaces with OVN"

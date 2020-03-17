@@ -6,7 +6,7 @@ import (
 	kapi "k8s.io/api/core/v1"
 	kexec "k8s.io/utils/exec"
 	"math/rand"
-	"net"
+	"os"
 	k8sv1alpha1 "ovn4nfv-k8s-plugin/pkg/apis/k8s/v1alpha1"
 	"strings"
 	"time"
@@ -16,11 +16,42 @@ type Controller struct {
 	gatewayCache map[string]string
 }
 
+type OVNNetworkConf struct {
+	Subnet     string
+	GatewayIP  string
+	ExcludeIPs string
+}
+
 const (
 	ovn4nfvRouterName = "ovn4nfv-master"
 	// Ovn4nfvAnnotationTag tag on already processed Pods
 	Ovn4nfvAnnotationTag = "k8s.plugin.opnfv.org/ovnInterfaces"
+	// OVN Default Network name
+	Ovn4nfvDefaultNw = "ovn4nfvk8s-default-nw"
 )
+
+var ovnConf *OVNNetworkConf
+
+func GetOvnNetConf() error {
+	ovnConf = &OVNNetworkConf{}
+
+	ovnConf.Subnet = os.Getenv("OVN_SUBNET")
+	if ovnConf.Subnet == "" {
+		fmt.Errorf("OVN subnet is not set in nfn-operator configmap env")
+	}
+
+	ovnConf.GatewayIP = os.Getenv("OVN_GATEWAYIP")
+	if ovnConf.GatewayIP == "" {
+		fmt.Errorf("OVN gatewayIP is not set in nfn-operator configmap env")
+	}
+
+	ovnConf.ExcludeIPs = os.Getenv("OVN_EXCLUDEIPS")
+	if ovnConf.ExcludeIPs == "" {
+		fmt.Errorf("OVN excludeIPs is not set in nfn-operator configmap env")
+	}
+
+	return nil
+}
 
 type netInterface struct {
 	Name           string
@@ -43,10 +74,16 @@ func NewOvnController(exec kexec.Interface) (*Controller, error) {
 		log.Error(err, "Failed to initialize exec helper")
 		return nil, err
 	}
+
+	if err := GetOvnNetConf(); err != nil {
+		log.Error(err, "nfn-operator OVN Network configmap is not set")
+		return nil, err
+	}
 	if err := SetupOvnUtils(); err != nil {
 		log.Error(err, "Failed to initialize OVN State")
 		return nil, err
 	}
+
 	ovnCtl = &Controller{
 		gatewayCache: make(map[string]string),
 	}
@@ -64,10 +101,6 @@ func GetOvnController() (*Controller, error) {
 // AddLogicalPorts adds ports to the Pod
 func (oc *Controller) AddLogicalPorts(pod *kapi.Pod, ovnNetObjs []map[string]interface{}) (key, value string) {
 
-	if ovnNetObjs == nil {
-		return
-	}
-
 	if pod.Spec.HostNetwork {
 		return
 	}
@@ -78,28 +111,38 @@ func (oc *Controller) AddLogicalPorts(pod *kapi.Pod, ovnNetObjs []map[string]int
 	}
 
 	var ovnString, outStr string
+	var defaultInterface bool
+
 	ovnString = "["
 	var ns netInterface
 	for _, net := range ovnNetObjs {
-
 		err := mapstructure.Decode(net, &ns)
 		if err != nil {
 			log.Error(err, "mapstruct error", "network", net)
 			return
 		}
-
 		if !oc.FindLogicalSwitch(ns.Name) {
 			log.Info("Logical Switch not found")
 			return
 		}
-		if ns.Interface == "" {
+		if ns.Name == Ovn4nfvDefaultNw {
+			defaultInterface = true
+		}
+		if ns.Interface == "" && ns.Name != Ovn4nfvDefaultNw {
 			log.Info("Interface name must be provided")
 			return
 		}
 		if ns.DefaultGateway == "" {
 			ns.DefaultGateway = "false"
 		}
-		outStr = oc.addLogicalPortWithSwitch(pod, ns.Name, ns.IPAddress, ns.MacAddress, ns.Interface, ns.NetType)
+		var portName string
+		if ns.Interface != "" {
+			portName = fmt.Sprintf("%s_%s_%s", pod.Namespace, pod.Name, ns.Interface)
+		} else {
+			portName = fmt.Sprintf("%s_%s", pod.Namespace, pod.Name)
+			ns.Interface = "*"
+		}
+		outStr = oc.addLogicalPortWithSwitch(pod, ns.Name, ns.IPAddress, ns.MacAddress, portName)
 		if outStr == "" {
 			return
 		}
@@ -110,7 +153,21 @@ func (oc *Controller) AddLogicalPorts(pod *kapi.Pod, ovnNetObjs []map[string]int
 		ovnString += tmpString
 		ovnString += ","
 	}
-	last := len(ovnString) - 1
+	var last int
+	if defaultInterface == false {
+		// Add Default interface
+		portName := fmt.Sprintf("%s_%s", pod.Namespace, pod.Name)
+		outStr = oc.addLogicalPortWithSwitch(pod, Ovn4nfvDefaultNw, "", "", portName)
+		if outStr == "" {
+			return
+		}
+		last := len(outStr) - 1
+		tmpString := outStr[:last]
+		tmpString += "," + "\\\"interface\\\":" + "\\\"" + "*" + "\\\"}"
+		ovnString += tmpString
+		ovnString += ","
+	}
+	last = len(ovnString) - 1
 	ovnString = ovnString[:last]
 	ovnString += "]"
 	key = Ovn4nfvAnnotationTag
@@ -121,6 +178,7 @@ func (oc *Controller) AddLogicalPorts(pod *kapi.Pod, ovnNetObjs []map[string]int
 // DeleteLogicalPorts deletes the OVN ports for the pod
 func (oc *Controller) DeleteLogicalPorts(name, namespace string) {
 
+	log.Info("DeleteLogicalPorts")
 	logicalPort := fmt.Sprintf("%s_%s", namespace, name)
 
 	// get the list of logical ports from OVN
@@ -134,66 +192,13 @@ func (oc *Controller) DeleteLogicalPorts(name, namespace string) {
 	for _, existingPort := range existingLogicalPorts {
 		if strings.Contains(existingPort, logicalPort) {
 			// found, delete this logical port
-			log.V(1).Info("Deleting", "Port", existingPort)
+			log.Info("Deleting", "Port", existingPort)
 			stdout, stderr, err := RunOVNNbctl("--if-exists", "lsp-del",
 				existingPort)
 			if err != nil {
 				log.Error(err, "Error in deleting pod's logical port ", "stdout", stdout, "stderr", stderr)
 			}
 		}
-	}
-	return
-}
-
-// CreateNetwork in OVN controller
-func (oc *Controller) createOvnLS(name, subnet, gatewayIP, excludeIps string) (gatewayIPMask string, err error) {
-	var stdout, stderr string
-
-	output, stderr, err := RunOVNNbctl("--data=bare", "--no-heading",
-		"--columns=name", "find", "logical_switch", "name="+name)
-	if err != nil {
-		log.Error(err, "Error in reading logical switch", "stderr", stderr)
-		return
-	}
-
-	if strings.Compare(name, output) == 0 {
-		log.V(1).Info("Logical Switch already exists, delete first to update/recreate", "name", name)
-		return "", fmt.Errorf("LS exists")
-	}
-
-	_, cidr, err := net.ParseCIDR(subnet)
-	if err != nil {
-		log.Error(err, "ovnNetwork '%s' invalid subnet CIDR", "name", name)
-		return
-
-	}
-	firstIP := NextIP(cidr.IP)
-	n, _ := cidr.Mask.Size()
-
-	var gwIP net.IP
-	if gatewayIP != "" {
-		gwIP, _, err = net.ParseCIDR(gatewayIP)
-		if err != nil {
-			// Check if this is a valid IP address
-			gwIP = net.ParseIP(gatewayIP)
-		}
-	}
-	// If no valid Gateway use the first IP address for GatewayIP
-	if gwIP == nil {
-		gatewayIPMask = fmt.Sprintf("%s/%d", firstIP.String(), n)
-	} else {
-		gatewayIPMask = fmt.Sprintf("%s/%d", gwIP.String(), n)
-	}
-
-	// Create a logical switch and set its subnet.
-	if excludeIps != "" {
-		stdout, stderr, err = RunOVNNbctl("--wait=hv", "--", "--may-exist", "ls-add", name, "--", "set", "logical_switch", name, "other-config:subnet="+subnet, "external-ids:gateway_ip="+gatewayIPMask, "other-config:exclude_ips="+excludeIps)
-	} else {
-		stdout, stderr, err = RunOVNNbctl("--wait=hv", "--", "--may-exist", "ls-add", name, "--", "set", "logical_switch", name, "other-config:subnet="+subnet, "external-ids:gateway_ip="+gatewayIPMask)
-	}
-	if err != nil {
-		log.Error(err, "Failed to create a logical switch", "name", name, "stdout", stdout, "stderr", stderr)
-		return
 	}
 	return
 }
@@ -208,7 +213,7 @@ func (oc *Controller) CreateNetwork(cr *k8sv1alpha1.Network) error {
 	gatewayIP := cr.Spec.Ipv4Subnets[0].Gateway
 	excludeIps := cr.Spec.Ipv4Subnets[0].ExcludeIps
 
-	gatewayIPMask, err := oc.createOvnLS(name, subnet, gatewayIP, excludeIps)
+	gatewayIPMask, err := createOvnLS(name, subnet, gatewayIP, excludeIps)
 	if err != nil {
 		return err
 	}
@@ -266,7 +271,7 @@ func (oc *Controller) CreateProviderNetwork(cr *k8sv1alpha1.ProviderNetwork) err
 	subnet := cr.Spec.Ipv4Subnets[0].Subnet
 	gatewayIP := cr.Spec.Ipv4Subnets[0].Gateway
 	excludeIps := cr.Spec.Ipv4Subnets[0].ExcludeIps
-	_, err := oc.createOvnLS(name, subnet, gatewayIP, excludeIps)
+	_, err := createOvnLS(name, subnet, gatewayIP, excludeIps)
 	if err != nil {
 		return err
 	}
@@ -339,18 +344,11 @@ func (oc *Controller) getGatewayFromSwitch(logicalSwitch string) (string, string
 	return gatewayIP, mask, nil
 }
 
-func (oc *Controller) addLogicalPortWithSwitch(pod *kapi.Pod, logicalSwitch, ipAddress, macAddress, interfaceName, netType string) (annotation string) {
+func (oc *Controller) addLogicalPortWithSwitch(pod *kapi.Pod, logicalSwitch, ipAddress, macAddress, portName string) (annotation string) {
 	var out, stderr string
 	var err error
 	var isStaticIP bool
 	if pod.Spec.HostNetwork {
-		return
-	}
-
-	var portName string
-	if interfaceName != "" {
-		portName = fmt.Sprintf("%s_%s_%s", pod.Namespace, pod.Name, interfaceName)
-	} else {
 		return
 	}
 

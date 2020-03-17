@@ -246,6 +246,59 @@ func setupDistributedRouter(name string) error {
 	return nil
 }
 
+// CreateNetwork in OVN controller
+func createOvnLS(name, subnet, gatewayIP, excludeIps string) (gatewayIPMask string, err error) {
+	var stdout, stderr string
+
+	output, stderr, err := RunOVNNbctl("--data=bare", "--no-heading",
+		"--columns=name", "find", "logical_switch", "name="+name)
+	if err != nil {
+		log.Error(err, "Error in reading logical switch", "stderr", stderr)
+		return
+	}
+
+	if strings.Compare(name, output) == 0 {
+		log.V(1).Info("Logical Switch already exists, delete first to update/recreate", "name", name)
+		return "", fmt.Errorf("LS exists")
+	}
+
+	_, cidr, err := net.ParseCIDR(subnet)
+	if err != nil {
+		log.Error(err, "ovnNetwork '%s' invalid subnet CIDR", "name", name)
+		return
+
+	}
+	firstIP := NextIP(cidr.IP)
+	n, _ := cidr.Mask.Size()
+
+	var gwIP net.IP
+	if gatewayIP != "" {
+		gwIP, _, err = net.ParseCIDR(gatewayIP)
+		if err != nil {
+			// Check if this is a valid IP address
+			gwIP = net.ParseIP(gatewayIP)
+		}
+	}
+	// If no valid Gateway use the first IP address for GatewayIP
+	if gwIP == nil {
+		gatewayIPMask = fmt.Sprintf("%s/%d", firstIP.String(), n)
+	} else {
+		gatewayIPMask = fmt.Sprintf("%s/%d", gwIP.String(), n)
+	}
+
+	// Create a logical switch and set its subnet.
+	if excludeIps != "" {
+		stdout, stderr, err = RunOVNNbctl("--wait=hv", "--", "--may-exist", "ls-add", name, "--", "set", "logical_switch", name, "other-config:subnet="+subnet, "external-ids:gateway_ip="+gatewayIPMask, "other-config:exclude_ips="+excludeIps)
+	} else {
+		stdout, stderr, err = RunOVNNbctl("--wait=hv", "--", "--may-exist", "ls-add", name, "--", "set", "logical_switch", name, "other-config:subnet="+subnet, "external-ids:gateway_ip="+gatewayIPMask)
+	}
+	if err != nil {
+		log.Error(err, "Failed to create a logical switch", "name", name, "stdout", stdout, "stderr", stderr)
+		return
+	}
+	return
+}
+
 // generateMac generates mac address.
 func generateMac() string {
 	prefix := "00:00:00"

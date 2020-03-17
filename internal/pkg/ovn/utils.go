@@ -5,6 +5,7 @@ import (
 	"fmt"
 	kexec "k8s.io/utils/exec"
 	"os"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -34,6 +35,13 @@ var SetupOvnUtils = func() error {
 	err := setupDistributedRouter(ovn4nfvRouterName)
 	if err != nil {
 		log.Error(err, "Failed to initialize OVN Distributed Router")
+		return err
+	}
+
+	log.Info("OVN Network", "OVN Default NW", Ovn4nfvDefaultNw, "OVN Subnet", ovnConf.Subnet, "OVN Gateway IP", ovnConf.GatewayIP, "OVN ExcludeIPs", ovnConf.ExcludeIPs)
+	_, err = createOvnLS(Ovn4nfvDefaultNw, ovnConf.Subnet, ovnConf.GatewayIP, ovnConf.ExcludeIPs)
+	if err != nil && !reflect.DeepEqual(err, fmt.Errorf("LS exists")) {
+		log.Error(err, "Failed to create ovn4nfvk8s default nw")
 		return err
 	}
 	return nil

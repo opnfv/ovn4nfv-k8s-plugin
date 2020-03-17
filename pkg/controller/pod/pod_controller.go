@@ -31,6 +31,7 @@ type nfnNetwork struct {
 	Interface []map[string]interface{} "json:\"interface\""
 }
 
+var enableOvnDefaultIntf bool = true
 // Add creates a new Pod Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
 func Add(mgr manager.Manager) error {
@@ -69,19 +70,19 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		CreateFunc: func(e event.CreateEvent) bool {
 			// The object doesn't contain annotation ,nfnNetworkAnnotation so the event will be
 			// ignored.
-			annotaion := e.Meta.GetAnnotations()
+			/*annotaion := e.Meta.GetAnnotations()
 			if _, ok := annotaion[nfnNetworkAnnotation]; !ok {
 				return false
-			}
+			}*/
 			return true
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			// The object doesn't contain annotation ,nfnNetworkAnnotation so the event will be
 			// ignored.
-			annotaion := e.Meta.GetAnnotations()
+			/*annotaion := e.Meta.GetAnnotations()
 			if _, ok := annotaion[nfnNetworkAnnotation]; !ok {
 				return false
-			}
+			}*/
 			return true
 		},
 	}
@@ -121,10 +122,9 @@ func (r *ReconcilePod) Reconcile(request reconcile.Request) (reconcile.Result, e
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 			// Return and don't requeue
-			if instance.Name == "" || instance.Namespace == "" {
-				return reconcile.Result{}, nil
-			}
+			reqLogger.Info("Delete Pod", "request", request)
 			r.deleteLogicalPorts(request.Name, request.Namespace)
+			reqLogger.Info("Exit Reconciling Pod")
 			return reconcile.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
@@ -133,6 +133,10 @@ func (r *ReconcilePod) Reconcile(request reconcile.Request) (reconcile.Result, e
 	if instance.Name == "" || instance.Namespace == "" {
 		return reconcile.Result{}, nil
 	}
+	if instance.Spec.HostNetwork {
+		return reconcile.Result{}, nil
+	}
+
 	err = r.addLogicalPorts(instance)
 	if err != nil && err.Error() == "Failed to add ports" {
 		// Requeue the object
@@ -158,16 +162,22 @@ func (r *ReconcilePod) addLogicalPorts(pod *corev1.Pod) error {
 
 	nfn, err := r.readPodAnnotation(pod)
 	if err != nil {
-		return err
+		// No annotation for multiple interfaces
+		nfn = &nfnNetwork {Interface: nil}
+		if enableOvnDefaultIntf == true {
+			nfn.Type = "ovn4nfv"
+		} else {
+			return err
+		}
 	}
-
+	
 	switch {
 	case nfn.Type == "ovn4nfv":
 		ovnCtl, err := ovn.GetOvnController()
 		if err != nil {
 			return err
 		}
-                if _, ok := pod.Annotations[ovn.Ovn4nfvAnnotationTag]; ok {
+        if _, ok := pod.Annotations[ovn.Ovn4nfvAnnotationTag]; ok {
 			return fmt.Errorf("Pod annotation found")
 		}
 		key, value := ovnCtl.AddLogicalPorts(pod, nfn.Interface)
@@ -188,6 +198,7 @@ func (r *ReconcilePod) deleteLogicalPorts(name, namesapce string) error {
 	if err != nil {
 		return err
 	}
+	log.Info("Calling DeleteLogicalPorts")
 	ovnCtl.DeleteLogicalPorts(name, namesapce)
 	return nil
 	// Add other types here

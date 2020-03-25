@@ -25,12 +25,14 @@ message Notification {
 message ProviderNetworkCreate {
     string provider_nw_name = 1;
     VlanInfo vlan = 2;
+    DirectInfo direct =3;
     // Add other types supported here beyond vlan
 }
 
 message ProviderNetworkRemove {
     string provider_nw_name = 1;
     string vlan_logical_intf = 2;
+    string direct_provider_intf = 3;
     // Add other types supported here
 }
 
@@ -38,6 +40,10 @@ message VlanInfo {
     string vlan_id = 1;
     string provider_intf = 2;
     string logical_intf = 3;
+}
+
+message DirectInfo {
+    string provider_intf = 1;
 }
 
 message InSync {

@@ -56,8 +56,149 @@ func subscribeNotif(client pb.NfnNotifyClient) error {
 	}
 }
 
-func handleNotif(msg *pb.Notification) {
+func createVlanProvidernetwork(payload *pb.Notification_ProviderNwCreate) error {
 	var err error
+	vlanID := payload.ProviderNwCreate.GetVlan().GetVlanId()
+	ln := payload.ProviderNwCreate.GetVlan().GetLogicalIntf()
+	pn := payload.ProviderNwCreate.GetVlan().GetProviderIntf()
+	name := payload.ProviderNwCreate.GetProviderNwName()
+	if ln == "" {
+		ln = name + "." + vlanID
+	}
+	err = ovn.CreateVlan(vlanID, pn, ln)
+	if err != nil {
+		log.Error(err, "Unable to create VLAN", "vlan", ln)
+		return err
+	}
+	err = ovn.CreatePnBridge("nw_"+name, "br-"+name, ln)
+	if err != nil {
+		log.Error(err, "Unable to create vlan direct bridge", "vlan", pn)
+		return err
+	}
+	return nil
+}
+
+func createDirectProvidernetwork(payload *pb.Notification_ProviderNwCreate) error {
+	var err error
+	pn := payload.ProviderNwCreate.GetDirect().GetProviderIntf()
+	name := payload.ProviderNwCreate.GetProviderNwName()
+	err = ovn.CreatePnBridge("nw_"+name, "br-"+name, pn)
+	if err != nil {
+		log.Error(err, "Unable to create direct bridge", "direct", pn)
+		return err
+	}
+	return nil
+}
+
+func deleteVlanProvidernetwork(payload *pb.Notification_ProviderNwRemove) {
+	ln := payload.ProviderNwRemove.GetVlanLogicalIntf()
+	name := payload.ProviderNwRemove.GetProviderNwName()
+	ovn.DeleteVlan(ln)
+	ovn.DeletePnBridge("nw_"+name, "br-"+name)
+}
+
+func deleteDirectProvidernetwork(payload *pb.Notification_ProviderNwRemove) {
+	ln := payload.ProviderNwRemove.GetVlanLogicalIntf()
+	name := payload.ProviderNwRemove.GetProviderNwName()
+	ovn.DeleteVlan(ln)
+	ovn.DeletePnBridge("nw_"+name, "br-"+name)
+}
+
+func inSyncVlanProvidernetwork() {
+	var err error
+	// Read config from node
+	vlanList := ovn.GetVlan()
+	pnBridgeList := ovn.GetPnBridge("nfn")
+	diffVlan := make(map[string]bool)
+	diffPnBridge := make(map[string]bool)
+VLAN:
+	for _, pn := range pnCreateStore {
+		if pn.ProviderNwCreate.GetVlan() != nil {
+			continue
+		}
+		id := pn.ProviderNwCreate.GetVlan().GetVlanId()
+		ln := pn.ProviderNwCreate.GetVlan().GetLogicalIntf()
+		pn := pn.ProviderNwCreate.GetVlan().GetProviderIntf()
+		if ln == "" {
+			ln = pn + "." + id
+		}
+		for _, vlan := range vlanList {
+			if vlan == ln {
+				// VLAN already present
+				diffVlan[vlan] = true
+				continue VLAN
+			}
+		}
+		// Vlan not found
+		err = ovn.CreateVlan(id, pn, ln)
+		if err != nil {
+			log.Error(err, "Unable to create VLAN", "vlan", ln)
+			return
+		}
+	}
+PRNETWORK:
+	for _, pn := range pnCreateStore {
+		if pn.ProviderNwCreate.GetVlan() != nil {
+			continue
+		}
+		ln := pn.ProviderNwCreate.GetVlan().GetLogicalIntf()
+		name := pn.ProviderNwCreate.GetProviderNwName()
+		for _, br := range pnBridgeList {
+			pnName := strings.Replace(br, "br-", "", -1)
+			if name == pnName {
+				diffPnBridge[br] = true
+				continue PRNETWORK
+			}
+		}
+		// Provider Network not found
+		ovn.CreatePnBridge("nw_"+name, "br-"+name, ln)
+	}
+	// Delete VLAN not in the list
+	for _, vlan := range vlanList {
+		if diffVlan[vlan] == false {
+			ovn.DeleteVlan(vlan)
+		}
+	}
+	// Delete Provider Bridge not in the list
+	for _, br := range pnBridgeList {
+		if diffPnBridge[br] == false {
+			name := strings.Replace(br, "br-", "", -1)
+			ovn.DeletePnBridge("nw_"+name, "br-"+name)
+		}
+	}
+}
+
+func inSyncDirectProvidernetwork() {
+	// Read config from node
+	pnBridgeList := ovn.GetPnBridge("nfn")
+	diffPnBridge := make(map[string]bool)
+DIRECTPRNETWORK:
+	for _, pn := range pnCreateStore {
+		if pn.ProviderNwCreate.GetDirect() != nil {
+			continue
+		}
+		pr := pn.ProviderNwCreate.GetDirect().GetProviderIntf()
+		name := pn.ProviderNwCreate.GetProviderNwName()
+		for _, br := range pnBridgeList {
+			pnName := strings.Replace(br, "br-", "", -1)
+			if name == pnName {
+				diffPnBridge[br] = true
+				continue DIRECTPRNETWORK
+			}
+		}
+		// Provider Network not found
+		ovn.CreatePnBridge("nw_"+name, "br-"+name, pr)
+	}
+	// Delete Provider Bridge not in the list
+	for _, br := range pnBridgeList {
+		if diffPnBridge[br] == false {
+			name := strings.Replace(br, "br-", "", -1)
+			ovn.DeletePnBridge("nw_"+name, "br-"+name)
+		}
+	}
+}
+
+func handleNotif(msg *pb.Notification) {
 	switch msg.GetCniType() {
 	case "ovn4nfv":
 		switch payload := msg.Payload.(type) {
@@ -67,84 +208,36 @@ func handleNotif(msg *pb.Notification) {
 				pnCreateStore = append(pnCreateStore, payload)
 				return
 			}
-			vlanID := payload.ProviderNwCreate.GetVlan().GetVlanId()
-			ln := payload.ProviderNwCreate.GetVlan().GetLogicalIntf()
-			pn := payload.ProviderNwCreate.GetVlan().GetProviderIntf()
-			name := payload.ProviderNwCreate.GetProviderNwName()
-			if ln == "" {
-				ln = name + "." + vlanID
+			if payload.ProviderNwCreate.GetVlan() != nil {
+				err := createVlanProvidernetwork(payload)
+				if err != nil {
+					return
+				}
 			}
-			err = ovn.CreateVlan(vlanID, pn, ln)
-			if err != nil {
-				log.Error(err, "Unable to create VLAN", "vlan", ln)
-				return
+
+			if payload.ProviderNwCreate.GetDirect() != nil {
+				err := createDirectProvidernetwork(payload)
+				if err != nil {
+					return
+				}
 			}
-			ovn.CreatePnBridge("nw_"+name, "br-"+name, ln)
 		case *pb.Notification_ProviderNwRemove:
 			if !inSync {
 				// Unexpected Remove message
 				return
 			}
-			ln := payload.ProviderNwRemove.GetVlanLogicalIntf()
-			name := payload.ProviderNwRemove.GetProviderNwName()
-			ovn.DeleteVlan(ln)
-			ovn.DeletePnBridge("nw_"+name, "br-"+name)
-		case *pb.Notification_InSync:
-			// Read config from node
-			vlanList := ovn.GetVlan()
-			pnBridgeList := ovn.GetPnBridge("nfn")
-			diffVlan := make(map[string]bool)
-			diffPnBridge := make(map[string]bool)
-		VLAN:
-			for _, pn := range pnCreateStore {
-				id := pn.ProviderNwCreate.GetVlan().GetVlanId()
-				ln := pn.ProviderNwCreate.GetVlan().GetLogicalIntf()
-				pn := pn.ProviderNwCreate.GetVlan().GetProviderIntf()
-				if ln == "" {
-					ln = pn + "." + id
-				}
-				for _, vlan := range vlanList {
-					if vlan == ln {
-						// VLAN already present
-						diffVlan[vlan] = true
-						continue VLAN
-					}
-				}
-				// Vlan not found
-				err = ovn.CreateVlan(id, pn, ln)
-				if err != nil {
-					log.Error(err, "Unable to create VLAN", "vlan", ln)
-					return
-				}
-			}
-		PRNETWORK:
-			for _, pn := range pnCreateStore {
-				ln := pn.ProviderNwCreate.GetVlan().GetLogicalIntf()
-				name := pn.ProviderNwCreate.GetProviderNwName()
-				for _, br := range pnBridgeList {
-					pnName := strings.Replace(br, "br-", "", -1)
-					if name == pnName {
-						diffPnBridge[br] = true
-						continue PRNETWORK
-					}
-				}
-				// Provider Network not found
-				ovn.CreatePnBridge("nw_"+name, "br-"+name, ln)
-			}
-			// Delete VLAN not in the list
-			for _, vlan := range vlanList {
-				if diffVlan[vlan] == false {
-					ovn.DeleteVlan(vlan)
-				}
-			}
-			// Delete Provider Bridge not in the list
-			for _, br := range pnBridgeList {
-				if diffPnBridge[br] == false {
-					name := strings.Replace(br, "br-", "", -1)
-					ovn.DeletePnBridge("nw_"+name, "br-"+name)
-				}
+
+			if payload.ProviderNwRemove.GetVlanLogicalIntf() != "" {
+				deleteVlanProvidernetwork(payload)
 			}
 
+			if payload.ProviderNwRemove.GetDirectProviderIntf() != "" {
+				deleteDirectProvidernetwork(payload)
+			}
+
+		case *pb.Notification_InSync:
+			inSyncVlanProvidernetwork()
+			inSyncDirectProvidernetwork()
 			pnCreateStore = nil
 			inSync = true
 

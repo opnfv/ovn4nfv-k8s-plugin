@@ -2,17 +2,18 @@ package nfn
 
 import (
 	"fmt"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/reflection"
 	"net"
 	pb "ovn4nfv-k8s-plugin/internal/pkg/nfnNotify/proto"
 	v1alpha1 "ovn4nfv-k8s-plugin/pkg/apis/k8s/v1alpha1"
-	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
+	clientset "ovn4nfv-k8s-plugin/pkg/generated/clientset/versioned"
 	"strings"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	clientset "ovn4nfv-k8s-plugin/pkg/generated/clientset/versioned"
+	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 )
 
 var log = logf.Log.WithName("rpc-server")
@@ -90,7 +91,7 @@ func updatePnStatus(pn *v1alpha1.ProviderNetwork, status string) error {
 	return err
 }
 
-func createMsg(pn *v1alpha1.ProviderNetwork) pb.Notification {
+func createVlanMsg(pn *v1alpha1.ProviderNetwork) pb.Notification {
 	msg := pb.Notification{
 		CniType: "ovn4nfv",
 		Payload: &pb.Notification_ProviderNwCreate{
@@ -107,13 +108,41 @@ func createMsg(pn *v1alpha1.ProviderNetwork) pb.Notification {
 	return msg
 }
 
-func deleteMsg(pn *v1alpha1.ProviderNetwork) pb.Notification {
+func deleteVlanMsg(pn *v1alpha1.ProviderNetwork) pb.Notification {
 	msg := pb.Notification{
 		CniType: "ovn4nfv",
 		Payload: &pb.Notification_ProviderNwRemove{
 			ProviderNwRemove: &pb.ProviderNetworkRemove{
 				ProviderNwName:  pn.Name,
 				VlanLogicalIntf: pn.Spec.Vlan.LogicalInterfaceName,
+			},
+		},
+	}
+	return msg
+}
+
+func createDirectMsg(pn *v1alpha1.ProviderNetwork) pb.Notification {
+	msg := pb.Notification{
+		CniType: "ovn4nfv",
+		Payload: &pb.Notification_ProviderNwCreate{
+			ProviderNwCreate: &pb.ProviderNetworkCreate{
+				ProviderNwName: pn.Name,
+				Direct: &pb.DirectInfo{
+					ProviderIntf: pn.Spec.Direct.ProviderInterfaceName,
+				},
+			},
+		},
+	}
+	return msg
+}
+
+func deleteDirectMsg(pn *v1alpha1.ProviderNetwork) pb.Notification {
+	msg := pb.Notification{
+		CniType: "ovn4nfv",
+		Payload: &pb.Notification_ProviderNwRemove{
+			ProviderNwRemove: &pb.ProviderNetworkRemove{
+				ProviderNwName:     pn.Name,
+				DirectProviderIntf: pn.Spec.Direct.ProviderInterfaceName,
 			},
 		},
 	}
@@ -130,9 +159,9 @@ func SendNotif(pn *v1alpha1.ProviderNetwork, msgType string, nodeReq string) err
 		switch {
 		case pn.Spec.ProviderNetType == "VLAN":
 			if msgType == "create" {
-				msg = createMsg(pn)
+				msg = createVlanMsg(pn)
 			} else if msgType == "delete" {
-				msg = deleteMsg(pn)
+				msg = deleteVlanMsg(pn)
 			}
 			if strings.EqualFold(pn.Spec.Vlan.VlanNodeSelector, "SPECIFIC") {
 				for _, label := range pn.Spec.Vlan.NodeLabelList {
@@ -147,6 +176,32 @@ func SendNotif(pn *v1alpha1.ProviderNetwork, msgType string, nodeReq string) err
 			} else if strings.EqualFold(pn.Spec.Vlan.VlanNodeSelector, "ALL") {
 				err = sendMsg(msg, "", "all", nodeReq)
 			} else if strings.EqualFold(pn.Spec.Vlan.VlanNodeSelector, "ANY") {
+				if pn.Status.State != v1alpha1.Created {
+					err = sendMsg(msg, "", "any", nodeReq)
+					if err == nil {
+						updatePnStatus(pn, v1alpha1.Created)
+					}
+				}
+			}
+		case pn.Spec.ProviderNetType == "DIRECT":
+			if msgType == "create" {
+				msg = createDirectMsg(pn)
+			} else if msgType == "delete" {
+				msg = deleteDirectMsg(pn)
+			}
+			if strings.EqualFold(pn.Spec.Direct.DirectNodeSelector, "SPECIFIC") {
+				for _, label := range pn.Spec.Direct.NodeLabelList {
+					l := strings.Split(label, "=")
+					if len(l) == 0 {
+						log.Error(fmt.Errorf("Syntax error label: %v", label), "NodeListIterator")
+						return nil
+					}
+				}
+				labels := strings.Join(pn.Spec.Direct.NodeLabelList[:], ",")
+				err = sendMsg(msg, labels, "specific", nodeReq)
+			} else if strings.EqualFold(pn.Spec.Direct.DirectNodeSelector, "ALL") {
+				err = sendMsg(msg, "", "all", nodeReq)
+			} else if strings.EqualFold(pn.Spec.Direct.DirectNodeSelector, "ANY") {
 				if pn.Status.State != v1alpha1.Created {
 					err = sendMsg(msg, "", "any", nodeReq)
 					if err == nil {

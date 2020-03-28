@@ -1,0 +1,82 @@
+apiVersion: k8s.plugin.opnfv.org/v1alpha1
+kind: ProviderNetwork
+metadata:
+  name: pnetwork
+spec:
+  cniType: ovn4nfv
+  ipv4Subnets:
+  - subnet: 172.16.33.0/24
+    name: subnet1
+    gateway: 172.16.33.1/24
+    excludeIps: 172.16.33.2 172.16.33.5..172.16.33.10
+  providerNetType: VLAN
+  vlan:
+    vlanId: "100"
+    providerInterfaceName: eth0
+    logicalInterfaceName: eth0.100
+    vlanNodeSelector: specific
+    nodeLabelList:
+    - kubernetes.io/hostname=ubuntu18
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pnw-original-vlan-1
+  labels:
+    app: pnw-original-vlan-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pnw-original-vlan-1
+  template:
+    metadata:
+      labels:
+        app: pnw-original-vlan-1
+      annotations:
+        k8s.v1.cni.cncf.io/networks: '[{ "name": "ovn-networkobj"}]'
+        k8s.plugin.opnfv.org/nfn-network: '{ "type": "ovn4nfv", "interface": [{ "name": "pnetwork", "interface": "net0" }]}'
+
+    spec:
+      containers:
+      - name: pnw-original-vlan-1
+        image: "busybox"
+        imagePullPolicy: Always
+        stdin: true
+        tty: true
+        securityContext:
+          privileged: true
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pnw-original-vlan-2
+  labels:
+    app: pnw-original-vlan-2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pnw-original-vlan-2
+  template:
+    metadata:
+      labels:
+        app: pnw-original-vlan-2
+      annotations:
+        k8s.v1.cni.cncf.io/networks: '[{ "name": "ovn-networkobj"}]'
+        k8s.plugin.opnfv.org/nfn-network: '{ "type": "ovn4nfv", "interface": [{ "name": "pnetwork", "interface": "net0" }]}'
+
+    spec:
+      containers:
+      - name: pnw-original-vlan-2
+        image: "busybox"
+        imagePullPolicy: Always
+        stdin: true
+        tty: true
+        securityContext:
+          privileged: true
+

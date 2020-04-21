@@ -10,8 +10,6 @@ import (
 	"strings"
 
 	"github.com/sirupsen/logrus"
-
-	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types/current"
 	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
@@ -106,10 +104,10 @@ func setupInterface(netns ns.NetNS, containerID, ifName, macAddress, ipAddress, 
 }
 
 // ConfigureInterface sets up the container interface
-var ConfigureInterface = func(args *skel.CmdArgs, namespace, podName, macAddress, ipAddress, gatewayIP, interfaceName, defaultGateway string, idx, mtu int) ([]*current.Interface, error) {
-	netns, err := ns.GetNS(args.Netns)
+var ConfigureInterface = func(containerNetns, containerID, ifName, namespace, podName, macAddress, ipAddress, gatewayIP, interfaceName, defaultGateway string, idx, mtu int) ([]*current.Interface, error) {
+	netns, err := ns.GetNS(containerNetns)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open netns %q: %v", args.Netns, err)
+		return nil, fmt.Errorf("failed to open netns %q: %v", containerNetns, err)
 	}
 	defer netns.Close()
 
@@ -118,10 +116,10 @@ var ConfigureInterface = func(args *skel.CmdArgs, namespace, podName, macAddress
 		ifaceID = fmt.Sprintf("%s_%s_%s", namespace, podName, interfaceName)
 	} else {
 		ifaceID = fmt.Sprintf("%s_%s", namespace, podName)
-		interfaceName = args.IfName
+		interfaceName = ifName
 		defaultGateway = "true"
 	}
-	hostIface, contIface, err := setupInterface(netns, args.ContainerID, interfaceName, macAddress, ipAddress, gatewayIP, defaultGateway, idx, mtu)
+	hostIface, contIface, err := setupInterface(netns, containerID, interfaceName, macAddress, ipAddress, gatewayIP, defaultGateway, idx, mtu)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +130,7 @@ var ConfigureInterface = func(args *skel.CmdArgs, namespace, podName, macAddress
 		fmt.Sprintf("external_ids:attached_mac=%s", macAddress),
 		fmt.Sprintf("external_ids:iface-id=%s", ifaceID),
 		fmt.Sprintf("external_ids:ip_address=%s", ipAddress),
-		fmt.Sprintf("external_ids:sandbox=%s", args.ContainerID),
+		fmt.Sprintf("external_ids:sandbox=%s", containerID),
 	}
 
 	var out []byte
@@ -160,10 +158,10 @@ func setupRoute(netns ns.NetNS, dst, gw, dev string) error {
 }
 
 // ConfigureRoute sets up the container routes
-var ConfigureRoute = func(args *skel.CmdArgs, dst, gw, dev string) error {
-	netns, err := ns.GetNS(args.Netns)
+var ConfigureRoute = func(containerNetns, dst, gw, dev string) error {
+	netns, err := ns.GetNS(containerNetns)
 	if err != nil {
-		return fmt.Errorf("failed to open netns %q: %v", args.Netns, err)
+		return fmt.Errorf("failed to open netns %q: %v", containerNetns, err)
 	}
 	defer netns.Close()
 	err = setupRoute(netns, dst, gw, dev)

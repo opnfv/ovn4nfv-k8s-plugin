@@ -2,29 +2,12 @@ FROM ubuntu:18.04 as base
 
 USER root
 
-RUN apt-get update && apt-get install -y iproute2 curl software-properties-common setpriv dpkg-dev netcat
+RUN apt-get update && apt-get install -y iproute2 curl software-properties-common setpriv dpkg-dev netcat jq wget
 
 RUN mkdir -p /opt/ovn4nfv-k8s-plugin/dist/ubuntu/deb
 RUN bash -xc "\
 pushd /opt/ovn4nfv-k8s-plugin/dist/ubuntu/deb; \
-curl --insecure --compressed -O -L https://github.com/akraino-icn/ovs/releases/download/v2.12.0/libopenvswitch-dev_2.12.0-1_amd64.deb; \
-curl --insecure --compressed -O -L https://github.com/akraino-icn/ovs/releases/download/v2.12.0/libopenvswitch_2.12.0-1_amd64.deb; \
-curl --insecure --compressed -O -L https://github.com/akraino-icn/ovs/releases/download/v2.12.0/openvswitch-common_2.12.0-1_amd64.deb; \
-curl --insecure --compressed -O -L https://github.com/akraino-icn/ovs/releases/download/v2.12.0/openvswitch-datapath-dkms_2.12.0-1_all.deb; \
-curl --insecure --compressed -O -L https://github.com/akraino-icn/ovs/releases/download/v2.12.0/openvswitch-datapath-source_2.12.0-1_all.deb; \
-curl --insecure --compressed -O -L https://github.com/akraino-icn/ovs/releases/download/v2.12.0/openvswitch-dbg_2.12.0-1_amd64.deb; \
-curl --insecure --compressed -O -L https://github.com/akraino-icn/ovs/releases/download/v2.12.0/openvswitch-ipsec_2.12.0-1_amd64.deb; \
-curl --insecure --compressed -O -L https://github.com/akraino-icn/ovs/releases/download/v2.12.0/openvswitch-pki_2.12.0-1_all.deb; \
-curl --insecure --compressed -O -L https://github.com/akraino-icn/ovs/releases/download/v2.12.0/openvswitch-switch_2.12.0-1_amd64.deb; \
-curl --insecure --compressed -O -L https://github.com/akraino-icn/ovs/releases/download/v2.12.0/openvswitch-testcontroller_2.12.0-1_amd64.deb; \
-curl --insecure --compressed -O -L https://github.com/akraino-icn/ovs/releases/download/v2.12.0/openvswitch-test_2.12.0-1_all.deb; \
-curl --insecure --compressed -O -L https://github.com/akraino-icn/ovs/releases/download/v2.12.0/openvswitch-vtep_2.12.0-1_amd64.deb; \
-curl --insecure --compressed -O -L https://github.com/akraino-icn/ovs/releases/download/v2.12.0/ovn-central_2.12.0-1_amd64.deb; \
-curl --insecure --compressed -O -L https://github.com/akraino-icn/ovs/releases/download/v2.12.0/ovn-common_2.12.0-1_amd64.deb; \
-curl --insecure --compressed -O -L https://github.com/akraino-icn/ovs/releases/download/v2.12.0/ovn-controller-vtep_2.12.0-1_amd64.deb; \
-curl --insecure --compressed -O -L https://github.com/akraino-icn/ovs/releases/download/v2.12.0/ovn-docker_2.12.0-1_amd64.deb; \
-curl --insecure --compressed -O -L https://github.com/akraino-icn/ovs/releases/download/v2.12.0/ovn-host_2.12.0-1_amd64.deb; \
-curl --insecure --compressed -O -L https://github.com/akraino-icn/ovs/releases/download/v2.12.0/python-openvswitch_2.12.0-1_all.deb; \
+wget -q -nv -O- https://api.github.com/repos/akraino-icn/ovs/releases/tags/v2.12.0 2>/dev/null | jq -r '.assets[] | select(.browser_download_url | contains("\""deb"\"")) | .browser_download_url' | wget -i -; \
 dpkg-scanpackages . | gzip -c9  > Packages.gz; \
 popd; \
 "

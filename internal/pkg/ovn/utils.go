@@ -65,7 +65,7 @@ func SetExec(exec kexec.Interface) error {
 	if err != nil {
 		return err
 	}
-	runner.hostIP = os.Getenv("HOST_IP")
+	runner.hostIP = os.Getenv("OVN_NB_TCP_SERVICE_HOST")
 	// OVN Host Port
 	runner.hostPort = "6641"
 	log.Info("Host Port", "IP", runner.hostIP, "Port", runner.hostPort)

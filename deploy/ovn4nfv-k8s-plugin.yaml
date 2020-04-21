@@ -284,10 +284,9 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: k8s-nfn-sa
-  namespace: operator
+  namespace: kube-system
 
 ---
-
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -298,6 +297,7 @@ rules:
   - ""
   resources:
   - pods
+  - pods/status
   - services
   - endpoints
   - persistentvolumeclaims
@@ -361,7 +361,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: nfn-operator
-  namespace: operator
+  namespace: kube-system
 spec:
   type: NodePort
   ports:
@@ -378,7 +378,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: ovn-controller-network
-  namespace: operator
+  namespace: kube-system
 data:
   OVN_SUBNET: "10.244.64.0/18"
   OVN_GATEWAYIP: "10.244.64.20/18"
@@ -391,7 +391,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: nfn-operator
-  namespace: operator
+  namespace: kube-system
 spec:
   replicas: 1
   selector:
@@ -408,10 +408,10 @@ spec:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
             - matchExpressions:
-              - key: nfnType
+              - key: ovn4nfv-k8s-plugin
                 operator: In
                 values:
-                - operator
+                - ovn-control-plane
       tolerations:
        - key: "node-role.kubernetes.io/master"
          effect: "NoSchedule"
@@ -429,10 +429,6 @@ spec:
           - containerPort: 50000
             protocol: TCP
           env:
-            - name: HOST_IP
-              valueFrom:
-                fieldRef:
-                  fieldPath: status.hostIP
             - name: POD_NAME
               valueFrom:
                 fieldRef:
@@ -445,7 +441,7 @@ kind: ConfigMap
 apiVersion: v1
 metadata:
   name: ovn4nfv-cni-config
-  namespace: operator
+  namespace: kube-system
   labels:
     app: ovn4nfv
 data:
@@ -459,14 +455,20 @@ data:
           plugin=ovn4nfvk8s-cni
 
           [kubernetes]
-          kubeconfig=/etc/kubernetes/admin.conf
+          kubeconfig=/etc/cni/net.d/ovn4nfv-k8s.d/ovn4nfv-k8s.kubeconfig
+  00-network.conf: |
+          {
+            "name": "ovn4nfv-k8s-plugin",
+            "type": "ovn4nfvk8s-cni",
+            "cniVersion": "0.3.1"
+          }
 
 ---
 apiVersion: extensions/v1beta1
 kind: DaemonSet
 metadata:
   name: ovn4nfv-cni
-  namespace: operator
+  namespace: kube-system
   labels:
     app: ovn4nfv
 spec:
@@ -483,6 +485,7 @@ spec:
       tolerations:
       - operator: Exists
         effect: NoSchedule
+      serviceAccountName: k8s-nfn-sa
       containers:
       - name: ovn4nfv
         image: integratedcloudnative/ovn4nfv-k8s-plugin:master
@@ -497,13 +500,20 @@ spec:
         securityContext:
           privileged: true
         volumeMounts:
+        - name: cni
+          mountPath: /host/etc/cni/net.d
         - name: cnibin
           mountPath: /host/opt/cni/bin
         - name: cniconf
           mountPath: /host/etc/openvswitch
         - name: ovn4nfv-cfg
           mountPath: /tmp/ovn4nfv-conf
+        - name: ovn4nfv-cni-net-conf
+          mountPath: /tmp/ovn4nfv-cni
       volumes:
+        - name: cni
+          hostPath:
+            path: /etc/cni/net.d
         - name: cnibin
           hostPath:
             path: /opt/cni/bin
@@ -516,13 +526,18 @@ spec:
             items:
             - key: ovn4nfv_k8s.conf
               path: ovn4nfv_k8s.conf
-
+        - name: ovn4nfv-cni-net-conf
+          configMap:
+            name: ovn4nfv-cni-config
+            items:
+            - key: 00-network.conf
+              path: 00-network.conf
 ---
 apiVersion: extensions/v1beta1
 kind: DaemonSet
 metadata:
   name: nfn-agent
-  namespace: operator
+  namespace: kube-system
   labels:
     app: nfn-agent
 spec:
@@ -534,11 +549,13 @@ spec:
         app: nfn-agent
     spec:
       hostNetwork: true
+      hostPID: true
       nodeSelector:
         beta.kubernetes.io/arch: amd64
       tolerations:
       - operator: Exists
         effect: NoSchedule
+      serviceAccountName: k8s-nfn-sa
       containers:
       - name: nfn-agent
         image: integratedcloudnative/ovn4nfv-k8s-plugin:master
@@ -556,12 +573,20 @@ spec:
               fieldRef:
                 fieldPath: spec.nodeName
         securityContext:
+          runAsUser: 0
+          capabilities:
+            add: ["NET_ADMIN", "SYS_ADMIN", "SYS_PTRACE"]
           privileged: true
         volumeMounts:
+        - mountPath: /var/run/dbus/
+          name: host-var-run-dbus
+          readOnly: true
         - mountPath: /run/openvswitch
           name: host-run-ovs
         - mountPath: /var/run/openvswitch
           name: host-var-run-ovs
+        - mountPath: /var/run/ovn4nfv-k8s-plugin
+          name: host-var-cniserver-socket-dir
       volumes:
       - name: host-run-ovs
         hostPath:
@@ -569,3 +594,9 @@ spec:
       - name: host-var-run-ovs
         hostPath:
           path: /var/run/openvswitch
+      - name: host-var-run-dbus
+        hostPath:
+          path: /var/run/dbus
+      - name: host-var-cniserver-socket-dir
+        hostPath:
+          path: /var/run/ovn4nfv-k8s-plugin

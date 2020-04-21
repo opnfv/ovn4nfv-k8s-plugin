@@ -9,8 +9,11 @@ import (
 	"os"
 	"os/signal"
 	pb "ovn4nfv-k8s-plugin/internal/pkg/nfnNotify/proto"
+        cs "ovn4nfv-k8s-plugin/internal/pkg/cniserver"
 	"ovn4nfv-k8s-plugin/internal/pkg/ovn"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
+        "k8s.io/client-go/kubernetes"
+        "k8s.io/client-go/rest"
 	"strings"
 	"syscall"
 	"time"
@@ -298,6 +301,26 @@ func main() {
 	client := pb.NewNfnNotifyClient(conn)
 	errorChannel = make(chan string)
 
+        // creates the in-cluster config
+	config, err := rest.InClusterConfig()
+	if err != nil {
+                log.Error(err, "Unable to create in-cluster config")
+		return
+	}
+
+	// creates the clientset
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		log.Error(err, "Unable to create clientset for in-cluster config")
+                return
+	}
+
+        cniserver := cs.NewCNIServer("",clientset)
+        err = cniserver.Start(cs.HandleCNIcommandRequest)
+        if err != nil {
+                log.Error(err, "Unable to start cni server")
+                return
+        }
 	// Run client in background
 	go subscribeNotif(client)
 	shutdownHandler(errorChannel)

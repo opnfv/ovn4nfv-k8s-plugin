@@ -1,6 +1,7 @@
 package config
 
 import (
+        "encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +9,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
+        "github.com/containernetworking/cni/pkg/types"
+        "github.com/containernetworking/cni/pkg/version"
 	gcfg "gopkg.in/gcfg.v1"
 
 	"k8s.io/client-go/kubernetes"
@@ -282,4 +285,18 @@ func NewClientset(conf *KubernetesConfig) (*kubernetes.Clientset, error) {
 	}
 
 	return kubernetes.NewForConfig(kconfig)
+}
+
+func ConfigureNetConf(bytes []byte) (*types.NetConf, error) {
+        conf := &types.NetConf{}
+	if err := json.Unmarshal(bytes, conf); err != nil {
+		return nil, fmt.Errorf("failed to load netconf: %v", err)
+	}
+
+        if conf.RawPrevResult != nil {
+                if err := version.ParsePrevResult(conf); err != nil {
+                        return nil, err
+                }
+        }
+        return conf, nil
 }

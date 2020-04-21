@@ -170,7 +170,7 @@ func (r *ReconcilePod) addLogicalPorts(pod *corev1.Pod) error {
 			return err
 		}
 	}
-	
+
 	switch {
 	case nfn.Type == "ovn4nfv":
 		ovnCtl, err := ovn.GetOvnController()

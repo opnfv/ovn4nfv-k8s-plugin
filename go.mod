@@ -22,6 +22,7 @@ require (
 	github.com/google/btree v1.0.0 // indirect
 	github.com/google/go-cmp v0.3.1 // indirect
 	github.com/gophercloud/gophercloud v0.2.0 // indirect
+	github.com/gorilla/mux v1.7.4
 	github.com/gregjones/httpcache v0.0.0-20190611155906-901d90724c79 // indirect
 	github.com/grpc-ecosystem/grpc-gateway v1.8.5 // indirect
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
@@ -67,6 +68,7 @@ require (
 	k8s.io/client-go v11.0.1-0.20190409021438-1a26190bd76a+incompatible
 	k8s.io/code-generator v0.17.0 // indirect
 	k8s.io/gengo v0.0.0-20191120174120-e74f70b9b27e // indirect
+	k8s.io/klog v1.0.0
 	k8s.io/kube-openapi v0.0.0-20191107075043-30be4d16710a
 	k8s.io/utils v0.0.0-20190801114015-581e00157fb1
 	sigs.k8s.io/controller-runtime v0.2.0-beta.4

@@ -1,9 +1,26 @@
+/*
+ * Copyright 2020 Intel Corporation, Inc
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package nfn
 
 import (
 	"fmt"
 	"net"
 	pb "ovn4nfv-k8s-plugin/internal/pkg/nfnNotify/proto"
+	chaining "ovn4nfv-k8s-plugin/internal/pkg/utils"
 	"ovn4nfv-k8s-plugin/internal/pkg/node"
 	v1alpha1 "ovn4nfv-k8s-plugin/pkg/apis/k8s/v1alpha1"
 	clientset "ovn4nfv-k8s-plugin/pkg/generated/clientset/versioned"
@@ -267,6 +284,55 @@ func sendMsg(msg pb.Notification, labels string, option string, nodeReq string) 
 		}
 	}
 	return nil
+}
+
+//SendProviderNotif to client
+func SendRouteNotif(chainRoutingInfo []chaining.RoutingInfo, msgType string) error {
+	var msg pb.Notification
+	var err error
+	var ins pb.ContainerRouteInsert
+
+	for _, r := range chainRoutingInfo {
+		ins.ContainerId = r.Id
+		ins.Route = nil
+
+		rt := &pb.RouteData{
+			Dst: r.LeftNetworkRoute.Dst,
+			Gw:  r.LeftNetworkRoute.GW,
+		}
+		ins.Route = append(ins.Route, rt)
+
+		rt = &pb.RouteData{
+			Dst: r.RightNetworkRoute.Dst,
+			Gw:  r.RightNetworkRoute.GW,
+		}
+		ins.Route = append(ins.Route, rt)
+
+		for _, d := range r.DynamicNetworkRoutes {
+			rt = &pb.RouteData{
+				Dst: d.Dst,
+				Gw:  d.GW,
+			}
+			ins.Route = append(ins.Route, rt)
+		}
+		if msgType == "create" {
+			msg = pb.Notification{
+				CniType: "ovn4nfv",
+				Payload: &pb.Notification_ContainterRtInsert{
+					ContainterRtInsert: &ins,
+				},
+			}
+		}
+		client := notifServer.GetClient(r.Node)
+		if client.stream != nil {
+			if err := client.stream.Send(&msg); err != nil {
+				log.Error(err, "Failed to send msg", "Node", r.Node)
+				return err
+			}
+		}
+		// TODO: Handle Delete
+	}
+	return err
 }
 
 func nodeListIterator(labels string) <-chan string {

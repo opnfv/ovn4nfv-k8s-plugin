@@ -19,6 +19,9 @@ message Notification {
         InSync in_sync = 2;
         ProviderNetworkCreate provider_nw_create = 3;
         ProviderNetworkRemove provider_nw_remove = 4;
+        ContainerRouteInsert containter_rt_insert = 5;
+        ContainerRouteRemove containter_rt_remove = 6;
+
     }
 }
 
@@ -44,6 +47,21 @@ message VlanInfo {
 
 message DirectInfo {
     string provider_intf = 1;
+}
+
+message RouteData {
+    string dst = 2;
+    string gw = 3;
+}
+
+message ContainerRouteInsert {
+    string container_id = 1;
+    repeated RouteData route = 2;
+}
+
+message ContainerRouteRemove {
+    string container_id = 1;
+    repeated RouteData route = 2;
 }
 
 message InSync {

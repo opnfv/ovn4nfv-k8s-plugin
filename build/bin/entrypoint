@@ -66,6 +66,15 @@ install_cni_plugins() {
     rm -rf cni-plugins-linux-$IMAGE_ARC-$CNI_VERSION.tgz
 }
 
+set_snat_default_inteface() {
+    default_interface=$(awk '$2 == 00000000 { print $1 }' /proc/net/route)
+
+    # Checking the SNAT for default interfaces                                             
+    if ! iptables -t nat -C POSTROUTING -o $default_interface -j MASQUERADE 2>/dev/null ; then
+        iptables -t nat -A POSTROUTING -o $default_interface -j MASQUERADE
+    fi
+}
+
 cmd=${1:-""}
 
 case ${cmd} in
@@ -80,6 +89,7 @@ case ${cmd} in
         cp -f $OVN4NFV_BIN_FILE $CNI_BIN_DIR
         cp -f $OVN4NFV_CONF_FILE $OVN4NFV_CONF_DIR
         cp -f $OVN4NFV_NET_CONF_FILE $CNI_CONF_DIR
+        set_snat_default_inteface
         create_kubeconfig
         install_cni_plugins
         # Sleep forever.

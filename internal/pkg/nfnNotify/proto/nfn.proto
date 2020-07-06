@@ -47,4 +47,6 @@ message DirectInfo {
 }
 
 message InSync {
+    string node_intf_ip_address = 1;
+    string node_intf_mac_address = 2;
 }

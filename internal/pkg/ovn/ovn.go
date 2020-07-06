@@ -2,14 +2,16 @@ package ovn
 
 import (
 	"fmt"
-	"github.com/mitchellh/mapstructure"
-	kapi "k8s.io/api/core/v1"
-	kexec "k8s.io/utils/exec"
 	"math/rand"
 	"os"
+	"ovn4nfv-k8s-plugin/internal/pkg/config"
 	k8sv1alpha1 "ovn4nfv-k8s-plugin/pkg/apis/k8s/v1alpha1"
 	"strings"
 	"time"
+
+	"github.com/mitchellh/mapstructure"
+	kapi "k8s.io/api/core/v1"
+	kexec "k8s.io/utils/exec"
 )
 
 type Controller struct {
@@ -32,22 +34,23 @@ const (
 
 var ovnConf *OVNNetworkConf
 
+//GetOvnNetConf return error
 func GetOvnNetConf() error {
 	ovnConf = &OVNNetworkConf{}
 
 	ovnConf.Subnet = os.Getenv("OVN_SUBNET")
 	if ovnConf.Subnet == "" {
-		fmt.Errorf("OVN subnet is not set in nfn-operator configmap env")
+		return fmt.Errorf("OVN subnet is not set in nfn-operator configmap env")
 	}
 
 	ovnConf.GatewayIP = os.Getenv("OVN_GATEWAYIP")
 	if ovnConf.GatewayIP == "" {
-		fmt.Errorf("OVN gatewayIP is not set in nfn-operator configmap env")
+		log.Info("No Gateway IP address provided - 1st IP address of the subnet range will be used as Gateway", "Subnet", ovnConf.Subnet)
 	}
 
 	ovnConf.ExcludeIPs = os.Getenv("OVN_EXCLUDEIPS")
 	if ovnConf.ExcludeIPs == "" {
-		fmt.Errorf("OVN excludeIPs is not set in nfn-operator configmap env")
+		log.Info("No IP addresses are excluded in the subnet range", "Subnet", ovnConf.Subnet)
 	}
 
 	return nil
@@ -96,6 +99,20 @@ func GetOvnController() (*Controller, error) {
 		return ovnCtl, nil
 	}
 	return nil, fmt.Errorf("OVN Controller not initialized")
+}
+
+func (oc *Controller) AddNodeLogicalPorts(node string) (ipAddr, macAddr string, err error) {
+	nodeName := strings.ToLower(node)
+	portName := config.GetNodeIntfName(nodeName)
+
+	log.V(1).Info("Creating Node logical port", "node", nodeName, "portName", portName)
+
+	ipAddr, macmacAddr, err := oc.addNodeLogicalPortWithSwitch(Ovn4nfvDefaultNw, portName)
+	if err != nil {
+		return "", "", err
+	}
+
+	return ipAddr, macmacAddr, nil
 }
 
 // AddLogicalPorts adds ports to the Pod
@@ -344,6 +361,110 @@ func (oc *Controller) getGatewayFromSwitch(logicalSwitch string) (string, string
 	return gatewayIP, mask, nil
 }
 
+func (oc *Controller) addNodeLogicalPortWithSwitch(logicalSwitch, portName string) (ipAddr, macAddr string, r error) {
+	var out, stderr string
+	var err error
+
+	log.V(1).Info("Creating Node logical port for on switch", "portName", portName, "logicalSwitch", logicalSwitch)
+
+	out, stderr, err = RunOVNNbctl("--wait=sb", "--",
+		"--may-exist", "lsp-add", logicalSwitch, portName,
+		"--", "lsp-set-addresses",
+		portName, "dynamic")
+	if err != nil {
+		log.Error(err, "Error while creating logical port %s ", "portName", portName, "stdout", out, "stderr", stderr)
+		return "", "", err
+	}
+
+	count := 30
+	for count > 0 {
+		out, stderr, err = RunOVNNbctl("get",
+			"logical_switch_port", portName, "dynamic_addresses")
+
+		if err == nil && out != "[]" {
+			break
+		}
+		if err != nil {
+			log.Error(err, "Error while obtaining addresses for", "portName", portName)
+			return "", "", err
+		}
+		time.Sleep(time.Second)
+		count--
+	}
+	if count == 0 {
+		log.Error(err, "Error while obtaining addresses for", "portName", portName, "stdout", out, "stderr", stderr)
+		return "", "", err
+	}
+
+	// static addresses have format ["0a:00:00:00:00:01 192.168.1.3"], while
+	// dynamic addresses have format "0a:00:00:00:00:01 192.168.1.3".
+	outStr := strings.TrimLeft(out, `[`)
+	outStr = strings.TrimRight(outStr, `]`)
+	outStr = strings.Trim(outStr, `"`)
+	addresses := strings.Split(outStr, " ")
+	if len(addresses) != 2 {
+		log.Info("Error while obtaining addresses for", "portName", portName)
+		return "", "", err
+	}
+
+	_, mask, err := oc.getGatewayFromSwitch(logicalSwitch)
+	if err != nil {
+		log.Error(err, "Error obtaining gateway address for switch", "logicalSwitch", logicalSwitch)
+		return "", "", err
+	}
+
+	ipAddr = fmt.Sprintf("%s/%s", addresses[1], mask)
+	macAddr = fmt.Sprintf("%s", addresses[0])
+
+	return ipAddr, macAddr, nil
+}
+
+func (oc *Controller) getNodeLogicalPortIPAddr(pod *kapi.Pod) (ipAddress string, r error) {
+	var out, stderr, nodeName, portName string
+	var err error
+
+	nodeName = strings.ToLower(pod.Spec.NodeName)
+	portName = config.GetNodeIntfName(nodeName)
+
+	log.V(1).Info("Get Node logical port", "pod", pod.GetName(), "node", nodeName, "portName", portName)
+
+	count := 30
+	for count > 0 {
+		out, stderr, err = RunOVNNbctl("get",
+			"logical_switch_port", portName, "dynamic_addresses")
+
+		if err == nil && out != "[]" {
+			break
+		}
+		if err != nil {
+			log.Error(err, "Error while obtaining addresses for", "portName", portName)
+			return "", err
+		}
+		time.Sleep(time.Second)
+		count--
+	}
+	if count == 0 {
+		log.Error(err, "Error while obtaining addresses for", "portName", portName, "stdout", out, "stderr", stderr)
+		return "", err
+	}
+
+	// static addresses have format ["0a:00:00:00:00:01 192.168.1.3"], while
+	// dynamic addresses have format "0a:00:00:00:00:01 192.168.1.3".
+	outStr := strings.TrimLeft(out, `[`)
+	outStr = strings.TrimRight(outStr, `]`)
+	outStr = strings.Trim(outStr, `"`)
+	addresses := strings.Split(outStr, " ")
+	if len(addresses) != 2 {
+		log.Info("Error while obtaining addresses for", "portName", portName)
+		return "", err
+	}
+
+	ipAddr := fmt.Sprintf("%s", addresses[1])
+	log.V(1).Info("Get Node logical port", "pod", pod.GetName(), "node", nodeName, "portName", portName, "Node port IP", ipAddr)
+
+	return ipAddr, nil
+}
+
 func (oc *Controller) addLogicalPortWithSwitch(pod *kapi.Pod, logicalSwitch, ipAddress, macAddress, portName string) (annotation string) {
 	var out, stderr string
 	var err error
@@ -425,11 +546,18 @@ func (oc *Controller) addLogicalPortWithSwitch(pod *kapi.Pod, logicalSwitch, ipA
 		return
 	}
 
-	gatewayIP, mask, err := oc.getGatewayFromSwitch(logicalSwitch)
+	_, mask, err := oc.getGatewayFromSwitch(logicalSwitch)
 	if err != nil {
 		log.Error(err, "Error obtaining gateway address for switch", "logicalSwitch", logicalSwitch)
 		return
 	}
+
+	gatewayIP, err := oc.getNodeLogicalPortIPAddr(pod)
+	if err != nil {
+		log.Error(err, "Error obtaining gateway address for switch", "logicalSwitch", logicalSwitch)
+		return
+	}
+
 	annotation = fmt.Sprintf(`{\"ip_address\":\"%s/%s\", \"mac_address\":\"%s\", \"gateway_ip\": \"%s\"}`, addresses[1], mask, addresses[0], gatewayIP)
 
 	return annotation

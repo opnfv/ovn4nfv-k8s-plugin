@@ -490,6 +490,7 @@ spec:
       - name: ovn4nfv
         image: integratedcloudnative/ovn4nfv-k8s-plugin:master
         command: ["/usr/local/bin/entrypoint", "cni"]
+        imagePullPolicy: IfNotPresent
         resources:
           requests:
             cpu: "100m"

@@ -6,7 +6,7 @@ require (
 	github.com/ajstarks/svgo v0.0.0-20191124160048-bd5c74aaa11c // indirect
 	github.com/containernetworking/cni v0.7.1
 	github.com/containernetworking/plugins v0.8.1
-	github.com/coreos/go-iptables v0.4.2 // indirect
+	github.com/coreos/go-iptables v0.4.2
 	github.com/creack/pty v1.1.9 // indirect
 	github.com/docker/spdystream v0.0.0-20181023171402-6480d4af844c // indirect
 	github.com/elazarl/goproxy v0.0.0-20191011121108-aa519ddbe484 // indirect
@@ -17,6 +17,7 @@ require (
 	github.com/go-openapi/spec v0.19.5
 	github.com/go-openapi/swag v0.19.6 // indirect
 	github.com/gogo/protobuf v1.3.1 // indirect
+	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b // indirect
 	github.com/golang/groupcache v0.0.0-20191227052852-215e87163ea7 // indirect
 	github.com/golang/protobuf v1.3.5
 	github.com/google/btree v1.0.0 // indirect
@@ -72,7 +73,7 @@ require (
 	k8s.io/kube-openapi v0.0.0-20191107075043-30be4d16710a
 	k8s.io/utils v0.0.0-20190801114015-581e00157fb1
 	sigs.k8s.io/controller-runtime v0.2.0-beta.4
-	sigs.k8s.io/controller-tools v0.1.10
+	sigs.k8s.io/controller-tools v0.1.10 // indirect
 	sigs.k8s.io/structured-merge-diff v1.0.1 // indirect
 )
 

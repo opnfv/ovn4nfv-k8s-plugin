@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"net"
 	pb "ovn4nfv-k8s-plugin/internal/pkg/nfnNotify/proto"
+	"ovn4nfv-k8s-plugin/internal/pkg/node"
 	v1alpha1 "ovn4nfv-k8s-plugin/pkg/apis/k8s/v1alpha1"
 	clientset "ovn4nfv-k8s-plugin/pkg/generated/clientset/versioned"
 	"strings"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
@@ -45,6 +46,11 @@ func (s *serverDB) Subscribe(sc *pb.SubscribeContext, ss pb.NfnNotify_SubscribeS
 	if nodeName == "" {
 		return fmt.Errorf("Node name can't be empty")
 	}
+
+	nodeIntfIPAddr, nodeIntfMacAddr, err := node.AddNodeLogicalPorts(nodeName)
+	if err != nil {
+		return fmt.Errorf("Error in creating node logical port for node- %s: %v", nodeName, err)
+	}
 	cp := client{
 		context: sc,
 		stream:  ss,
@@ -61,7 +67,10 @@ func (s *serverDB) Subscribe(sc *pb.SubscribeContext, ss pb.NfnNotify_SubscribeS
 	inSyncMsg := pb.Notification{
 		CniType: "ovn4nfv",
 		Payload: &pb.Notification_InSync{
-			InSync: &pb.InSync{},
+			InSync: &pb.InSync{
+				NodeIntfIpAddress:  nodeIntfIPAddr,
+				NodeIntfMacAddress: nodeIntfMacAddr,
+			},
 		},
 	}
 	log.Info("Send Insync")

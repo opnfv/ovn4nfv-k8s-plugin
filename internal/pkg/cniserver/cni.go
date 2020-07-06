@@ -1,26 +1,28 @@
 package cniserver
 
 import (
-        "encoding/json"
-        "k8s.io/apimachinery/pkg/util/wait"
-        "fmt"
-        "net"
-        "strconv"
-        "net/http"
-        "time"
-        "k8s.io/klog"
+	"encoding/json"
+	"fmt"
+	"net"
+	"net/http"
+	"strconv"
+	"time"
 
-        "k8s.io/client-go/kubernetes"
-        "github.com/containernetworking/cni/pkg/types"
-        "github.com/containernetworking/cni/pkg/types/current"
-        "ovn4nfv-k8s-plugin/internal/pkg/kube"
-        "k8s.io/apimachinery/pkg/api/errors"
-        "ovn4nfv-k8s-plugin/internal/pkg/config"
-        "ovn4nfv-k8s-plugin/cmd/ovn4nfvk8s-cni/app"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/klog"
+
+	"ovn4nfv-k8s-plugin/cmd/ovn4nfvk8s-cni/app"
+	"ovn4nfv-k8s-plugin/internal/pkg/config"
+	"ovn4nfv-k8s-plugin/internal/pkg/kube"
+
+	"github.com/containernetworking/cni/pkg/types"
+	"github.com/containernetworking/cni/pkg/types/current"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/client-go/kubernetes"
 )
 
 const (
-        ovn4nfvAnnotationTag = "k8s.plugin.opnfv.org/ovnInterfaces"
+	ovn4nfvAnnotationTag = "k8s.plugin.opnfv.org/ovnInterfaces"
 )
 
 func parseOvnNetworkObject(ovnnetwork string) ([]map[string]string, error) {
@@ -85,12 +87,12 @@ func prettyPrint(i interface{}) string {
 }
 
 func isNotFoundError(err error) bool {
-        statusErr, ok := err.(*errors.StatusError)
-        return ok && statusErr.Status().Code == http.StatusNotFound
+	statusErr, ok := err.(*errors.StatusError)
+	return ok && statusErr.Status().Code == http.StatusNotFound
 }
 
 func (cr *CNIServerRequest) addMultipleInterfaces(ovnAnnotation, namespace, podName string) types.Result {
-        klog.Infof("ovn4nfvk8s-cni: addMultipleInterfaces ")
+	klog.Infof("ovn4nfvk8s-cni: addMultipleInterfaces ")
 	var ovnAnnotatedMap []map[string]string
 	ovnAnnotatedMap, err := parseOvnNetworkObject(ovnAnnotation)
 	if err != nil {
@@ -224,26 +226,26 @@ func (cr *CNIServerRequest) addRoutes(ovnAnnotation string, dstResult types.Resu
 }
 
 func (cr *CNIServerRequest) cmdAdd(kclient kubernetes.Interface) ([]byte, error) {
-        klog.Infof("ovn4nfvk8s-cni: cmdAdd")
+	klog.Infof("ovn4nfvk8s-cni: cmdAdd")
 	namespace := cr.PodNamespace
-        podname := cr.PodName
+	podname := cr.PodName
 	if namespace == "" || podname == "" {
 		return nil, fmt.Errorf("required CNI variable missing")
 	}
-        klog.Infof("ovn4nfvk8s-cni: cmdAdd for pod podname:%s and namespace:%s", podname, namespace)
+	klog.Infof("ovn4nfvk8s-cni: cmdAdd for pod podname:%s and namespace:%s", podname, namespace)
 	kubecli := &kube.Kube{KClient: kclient}
 	// Get the IP address and MAC address from the API server.
 	var annotationBackoff = wait.Backoff{Duration: 1 * time.Second, Steps: 14, Factor: 1.5, Jitter: 0.1}
 	var annotation map[string]string
-        var err error
+	var err error
 	if err = wait.ExponentialBackoff(annotationBackoff, func() (bool, error) {
 		annotation, err = kubecli.GetAnnotationsOnPod(namespace, podname)
 		if err != nil {
-                        if isNotFoundError(err) {
-			        return false, fmt.Errorf("Error - pod not found - %v", err)
-                        }
-                        klog.Infof("ovn4nfvk8s-cni: cmdAdd Warning - Error while obtaining pod annotations - %v", err)
-                        return false,nil
+			if isNotFoundError(err) {
+				return false, fmt.Errorf("Error - pod not found - %v", err)
+			}
+			klog.Infof("ovn4nfvk8s-cni: cmdAdd Warning - Error while obtaining pod annotations - %v", err)
+			return false, nil
 		}
 		if _, ok := annotation[ovn4nfvAnnotationTag]; ok {
 			return true, nil
@@ -258,7 +260,7 @@ func (cr *CNIServerRequest) cmdAdd(kclient kubernetes.Interface) ([]byte, error)
 	if !ok {
 		return nil, fmt.Errorf("Error while obtaining pod annotations")
 	}
-        result := cr.addMultipleInterfaces(ovnAnnotation, namespace, podname)
+	result := cr.addMultipleInterfaces(ovnAnnotation, namespace, podname)
 	//Add Routes to the pod if annotation found for routes
 	ovnRouteAnnotation, ok := annotation["ovnNetworkRoutes"]
 	if ok {
@@ -266,12 +268,12 @@ func (cr *CNIServerRequest) cmdAdd(kclient kubernetes.Interface) ([]byte, error)
 		result = cr.addRoutes(ovnRouteAnnotation, result)
 	}
 
-        if result == nil {
-                klog.Errorf("result struct the ovn4nfv-k8s-plugin cniserver")
-                return nil, fmt.Errorf("result is nil from cni server response")
-        }
+	if result == nil {
+		klog.Errorf("result struct the ovn4nfv-k8s-plugin cniserver")
+		return nil, fmt.Errorf("result is nil from cni server response")
+	}
 
-        responseBytes, err := json.Marshal(result)
+	responseBytes, err := json.Marshal(result)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal pod request response: %v", err)
 	}
@@ -280,8 +282,8 @@ func (cr *CNIServerRequest) cmdAdd(kclient kubernetes.Interface) ([]byte, error)
 }
 
 func (cr *CNIServerRequest) cmdDel() ([]byte, error) {
-        klog.Infof("cmdDel ")
-        for i := 0; i < 10; i++ {
+	klog.Infof("cmdDel ")
+	for i := 0; i < 10; i++ {
 		ifaceName := cr.SandboxID[:14] + strconv.Itoa(i)
 		done, err := app.PlatformSpecificCleanup(ifaceName)
 		if err != nil {
@@ -291,5 +293,5 @@ func (cr *CNIServerRequest) cmdDel() ([]byte, error) {
 			break
 		}
 	}
-        return []byte{}, nil
+	return []byte{}, nil
 }

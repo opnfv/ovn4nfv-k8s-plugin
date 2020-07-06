@@ -3,21 +3,26 @@ package main
 import (
 	"context"
 	"fmt"
-	"google.golang.org/grpc"
 	"io"
-	kexec "k8s.io/utils/exec"
 	"os"
 	"os/signal"
+	cs "ovn4nfv-k8s-plugin/internal/pkg/cniserver"
 	pb "ovn4nfv-k8s-plugin/internal/pkg/nfnNotify/proto"
-        cs "ovn4nfv-k8s-plugin/internal/pkg/cniserver"
 	"ovn4nfv-k8s-plugin/internal/pkg/ovn"
-	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
-        "k8s.io/client-go/kubernetes"
-        "k8s.io/client-go/rest"
 	"strings"
 	"syscall"
 	"time"
+
+	"google.golang.org/grpc"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	kexec "k8s.io/utils/exec"
+	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
+
 	//"google.golang.org/grpc/keepalive"
+
+	"ovn4nfv-k8s-plugin/cmd/ovn4nfvk8s-cni/app"
+
 	"google.golang.org/grpc/status"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -201,6 +206,19 @@ DIRECTPRNETWORK:
 	}
 }
 
+func createNodeOVSInternalPort(payload *pb.Notification_InSync) error {
+	nodeIntfIPAddr := strings.Trim(strings.TrimSpace(payload.InSync.GetNodeIntfIpAddress()), "\"")
+	nodeIntfMacAddr := strings.Trim(strings.TrimSpace(payload.InSync.GetNodeIntfMacAddress()), "\"")
+	nodeName := os.Getenv("NFN_NODE_NAME")
+
+	err := app.CreateNodeOVSInternalPort(nodeIntfIPAddr, nodeIntfMacAddr, nodeName)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func handleNotif(msg *pb.Notification) {
 	switch msg.GetCniType() {
 	case "ovn4nfv":
@@ -239,6 +257,12 @@ func handleNotif(msg *pb.Notification) {
 			}
 
 		case *pb.Notification_InSync:
+			if payload.InSync.GetNodeIntfIpAddress() != "" && payload.InSync.GetNodeIntfMacAddress() != "" {
+				err := createNodeOVSInternalPort(payload)
+				if err != nil {
+					return
+				}
+			}
 			inSyncVlanProvidernetwork()
 			inSyncDirectProvidernetwork()
 			pnCreateStore = nil
@@ -301,10 +325,10 @@ func main() {
 	client := pb.NewNfnNotifyClient(conn)
 	errorChannel = make(chan string)
 
-        // creates the in-cluster config
+	// creates the in-cluster config
 	config, err := rest.InClusterConfig()
 	if err != nil {
-                log.Error(err, "Unable to create in-cluster config")
+		log.Error(err, "Unable to create in-cluster config")
 		return
 	}
 
@@ -312,15 +336,15 @@ func main() {
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		log.Error(err, "Unable to create clientset for in-cluster config")
-                return
+		return
 	}
 
-        cniserver := cs.NewCNIServer("",clientset)
-        err = cniserver.Start(cs.HandleCNIcommandRequest)
-        if err != nil {
-                log.Error(err, "Unable to start cni server")
-                return
-        }
+	cniserver := cs.NewCNIServer("", clientset)
+	err = cniserver.Start(cs.HandleCNIcommandRequest)
+	if err != nil {
+		log.Error(err, "Unable to start cni server")
+		return
+	}
 	// Run client in background
 	go subscribeNotif(client)
 	shutdownHandler(errorChannel)

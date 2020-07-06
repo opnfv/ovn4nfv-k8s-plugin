@@ -6,13 +6,15 @@ import (
 	"fmt"
 	"net"
 	"os/exec"
+	"ovn4nfv-k8s-plugin/internal/pkg/config"
+	"ovn4nfv-k8s-plugin/internal/pkg/network"
 	"strconv"
 	"strings"
 
-	"github.com/sirupsen/logrus"
 	"github.com/containernetworking/cni/pkg/types/current"
 	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
+	"github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
 )
 
@@ -30,6 +32,65 @@ func renameLink(curName, newName string) error {
 	}
 	if err := netlink.LinkSetUp(link); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+//Todo Comments
+func CreateNodeOVSInternalPort(nodeintfipaddr, nodeintfmacaddr, node string) error {
+	nodeName := strings.ToLower(node)
+	nodeOVSInternalIntfName := config.GetNodeIntfName(nodeName)
+
+	hwAddr, err := net.ParseMAC(nodeintfmacaddr)
+	if err != nil {
+		logrus.Errorf("Error is converting %q to net hwaddr: %v", nodeOVSInternalIntfName, err)
+		return fmt.Errorf("Error is converting %q to net hwaddr: %v", nodeOVSInternalIntfName, err)
+	}
+
+	ovsArgs := []string{
+		"add-port", "br-int", nodeOVSInternalIntfName, "--", "set",
+		"interface", nodeOVSInternalIntfName, "type=internal",
+		fmt.Sprintf("mac_in_use=%s", strings.ReplaceAll(hwAddr.String(), ":", "\\:")),
+		fmt.Sprintf("mac=%s", strings.ReplaceAll(hwAddr.String(), ":", "\\:")),
+		fmt.Sprintf("external_ids:iface-id=%s", nodeOVSInternalIntfName),
+	}
+	logrus.Infof("ovs-vsctl args - %v", ovsArgs)
+
+	//var out []byte
+	out, err := exec.Command("ovs-vsctl", ovsArgs...).CombinedOutput()
+	if err != nil {
+		logrus.Errorf("failure in creating Node OVS internal port - %s: %v - %q", nodeOVSInternalIntfName, err, string(out))
+		return fmt.Errorf("failure in creating Node OVS internal port - %s: %v - %q", nodeOVSInternalIntfName, err, string(out))
+	}
+	logrus.Infof("ovs-vsctl args - %v output:%v", ovsArgs, string(out))
+
+	link, err := netlink.LinkByName(nodeOVSInternalIntfName)
+	if err != nil {
+		logrus.Errorf("failed to get netlink for Node OVS internal port %s: %v", nodeOVSInternalIntfName, err)
+		return fmt.Errorf("failed to get netlink for Node OVS internal port %s: %v", nodeOVSInternalIntfName, err)
+	}
+
+	if err := netlink.LinkSetUp(link); err != nil {
+		logrus.Errorf("failed to set up netlink for Node OVS internal port %s: %v", nodeOVSInternalIntfName, err)
+		return fmt.Errorf("failed to set up netlink for Node OVS internal port %s: %v", nodeOVSInternalIntfName, err)
+	}
+
+	addr, err := netlink.ParseAddr(nodeintfipaddr)
+	if err != nil {
+		logrus.Errorf("failed to parse IP addr %s: %v", nodeintfipaddr, err)
+		return fmt.Errorf("failed to parse IP addr %s: %v", nodeintfipaddr, err)
+	}
+	err = netlink.AddrAdd(link, addr)
+	if err != nil {
+		logrus.Errorf("failed to parse IP addr %s: %v", nodeintfipaddr, err)
+		return fmt.Errorf("failed to add IP addr %s to %s: %v", nodeintfipaddr, nodeOVSInternalIntfName, err)
+	}
+
+	err = network.SetupAndEnsureIPTables(network.MasqRules(nodeOVSInternalIntfName))
+	if err != nil {
+		logrus.Errorf("failed to apply snat rule for %s: %v", nodeOVSInternalIntfName, err)
+		return fmt.Errorf("failed to apply snat rule for %s: %v", nodeOVSInternalIntfName, err)
 	}
 
 	return nil

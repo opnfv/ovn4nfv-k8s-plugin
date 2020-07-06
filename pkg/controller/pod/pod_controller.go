@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"ovn4nfv-k8s-plugin/internal/pkg/ovn"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"ovn4nfv-k8s-plugin/internal/pkg/ovn"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -32,6 +33,7 @@ type nfnNetwork struct {
 }
 
 var enableOvnDefaultIntf bool = true
+
 // Add creates a new Pod Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
 func Add(mgr manager.Manager) error {
@@ -137,6 +139,12 @@ func (r *ReconcilePod) Reconcile(request reconcile.Request) (reconcile.Result, e
 		return reconcile.Result{}, nil
 	}
 
+	if instance.Spec.NodeName == "" {
+		return reconcile.Result{
+			Requeue: true,
+		}, nil
+	}
+
 	err = r.addLogicalPorts(instance)
 	if err != nil && err.Error() == "Failed to add ports" {
 		// Requeue the object
@@ -163,7 +171,7 @@ func (r *ReconcilePod) addLogicalPorts(pod *corev1.Pod) error {
 	nfn, err := r.readPodAnnotation(pod)
 	if err != nil {
 		// No annotation for multiple interfaces
-		nfn = &nfnNetwork {Interface: nil}
+		nfn = &nfnNetwork{Interface: nil}
 		if enableOvnDefaultIntf == true {
 			nfn.Type = "ovn4nfv"
 		} else {
@@ -177,7 +185,7 @@ func (r *ReconcilePod) addLogicalPorts(pod *corev1.Pod) error {
 		if err != nil {
 			return err
 		}
-        if _, ok := pod.Annotations[ovn.Ovn4nfvAnnotationTag]; ok {
+		if _, ok := pod.Annotations[ovn.Ovn4nfvAnnotationTag]; ok {
 			return fmt.Errorf("Pod annotation found")
 		}
 		key, value := ovnCtl.AddLogicalPorts(pod, nfn.Interface)
@@ -187,7 +195,7 @@ func (r *ReconcilePod) addLogicalPorts(pod *corev1.Pod) error {
 		return fmt.Errorf("Failed to add ports")
 	default:
 		return fmt.Errorf("Unsupported Networking type %s", nfn.Type)
-	// Add other types here
+		// Add other types here
 	}
 }
 

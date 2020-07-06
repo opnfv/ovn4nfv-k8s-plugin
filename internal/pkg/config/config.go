@@ -1,16 +1,18 @@
 package config
 
 import (
-        "encoding/json"
+	"crypto/sha1"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 
+	"github.com/containernetworking/cni/pkg/types"
+	"github.com/containernetworking/cni/pkg/version"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
-        "github.com/containernetworking/cni/pkg/types"
-        "github.com/containernetworking/cni/pkg/version"
 	gcfg "gopkg.in/gcfg.v1"
 
 	"k8s.io/client-go/kubernetes"
@@ -288,15 +290,23 @@ func NewClientset(conf *KubernetesConfig) (*kubernetes.Clientset, error) {
 }
 
 func ConfigureNetConf(bytes []byte) (*types.NetConf, error) {
-        conf := &types.NetConf{}
+	conf := &types.NetConf{}
 	if err := json.Unmarshal(bytes, conf); err != nil {
 		return nil, fmt.Errorf("failed to load netconf: %v", err)
 	}
 
-        if conf.RawPrevResult != nil {
-                if err := version.ParsePrevResult(conf); err != nil {
-                        return nil, err
-                }
-        }
-        return conf, nil
+	if conf.RawPrevResult != nil {
+		if err := version.ParsePrevResult(conf); err != nil {
+			return nil, err
+		}
+	}
+	return conf, nil
+}
+
+func GetNodeIntfName(node string) string {
+	h := sha1.New()
+	h.Write([]byte(node))
+	bs := h.Sum(nil)
+	encodednodeStr := hex.EncodeToString(bs)
+	return fmt.Sprintf("ovn4nfv0-%s", encodednodeStr[:6])
 }

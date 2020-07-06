@@ -4,26 +4,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
-        "strings"
-        "os"
-        "net"
-        "path/filepath"
-        "syscall"
-        "k8s.io/klog"
+	"os"
+	"path/filepath"
+	"strings"
+	"syscall"
+
+	"k8s.io/klog"
+
+	"ovn4nfv-k8s-plugin/internal/pkg/config"
 
 	"github.com/containernetworking/cni/pkg/types"
 	"github.com/gorilla/mux"
-	"k8s.io/client-go/kubernetes"
-        "ovn4nfv-k8s-plugin/internal/pkg/config"
-        utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	utilwait "k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 )
 
 const CNIServerRunDir string = "/var/run/ovn4nfv-k8s-plugin/cniserver"
 const CNIServerSocketName string = "ovn4nfv-k8s-plugin-cni-server.sock"
 const CNIServerSocketPath string = CNIServerRunDir + "/" + CNIServerSocketName
-
 
 type CNIcommand string
 
@@ -32,13 +33,13 @@ const CNIUpdate CNIcommand = "UPDATE"
 const CNIDel CNIcommand = "DEL"
 
 type CNIServerRequest struct {
-	Command CNIcommand
+	Command      CNIcommand
 	PodNamespace string
-	PodName string
-	SandboxID string
-	Netns string
-	IfName string
-	CNIConf *types.NetConf
+	PodName      string
+	SandboxID    string
+	Netns        string
+	IfName       string
+	CNIConf      *types.NetConf
 }
 
 type cniServerRequestFunc func(request *CNIServerRequest, k8sclient kubernetes.Interface) ([]byte, error)
@@ -51,7 +52,7 @@ type CNIServer struct {
 	http.Server
 	requestFunc  cniServerRequestFunc
 	serverrundir string
-	k8sclient      kubernetes.Interface
+	k8sclient    kubernetes.Interface
 }
 
 func NewCNIServer(serverRunSir string, k8sclient kubernetes.Interface) *CNIServer {
@@ -66,7 +67,7 @@ func NewCNIServer(serverRunSir string, k8sclient kubernetes.Interface) *CNIServe
 			Handler: router,
 		},
 		serverrundir: serverRunSir,
-                k8sclient: k8sclient,
+		k8sclient:    k8sclient,
 	}
 	router.NotFoundHandler = http.HandlerFunc(http.NotFound)
 	router.HandleFunc("/", cs.handleCNIShimRequest).Methods("POST")
@@ -100,42 +101,42 @@ func loadCNIRequestToCNIServer(r *CNIEndpointRequest) (*CNIServerRequest, error)
 		Command: CNIcommand(cmd),
 	}
 
-        cnishimreq.SandboxID, ok = r.ArgEnv["CNI_CONTAINERID"]
-        if !ok {
-                return nil, fmt.Errorf("cnishim req missing CNI_CONTAINERID")
-        }
+	cnishimreq.SandboxID, ok = r.ArgEnv["CNI_CONTAINERID"]
+	if !ok {
+		return nil, fmt.Errorf("cnishim req missing CNI_CONTAINERID")
+	}
 
-        cnishimreq.Netns, ok = r.ArgEnv["CNI_NETNS"]
-        if !ok {
-                return nil, fmt.Errorf("cnishim req missing CNI_NETNS")
-        }
+	cnishimreq.Netns, ok = r.ArgEnv["CNI_NETNS"]
+	if !ok {
+		return nil, fmt.Errorf("cnishim req missing CNI_NETNS")
+	}
 
-        cnishimreq.IfName, ok = r.ArgEnv["CNI_IFNAME"]
-        if !ok {
-                return nil, fmt.Errorf("cnishim req missing CNI_IFNAME")
-        }
+	cnishimreq.IfName, ok = r.ArgEnv["CNI_IFNAME"]
+	if !ok {
+		return nil, fmt.Errorf("cnishim req missing CNI_IFNAME")
+	}
 
-        cnishimArgs, err := loadCNIShimArgs(r.ArgEnv)
-        if err != nil {
-                return nil, err
-        }
+	cnishimArgs, err := loadCNIShimArgs(r.ArgEnv)
+	if err != nil {
+		return nil, err
+	}
 
-        cnishimreq.PodNamespace, ok = cnishimArgs["K8S_POD_NAMESPACE"]
-        if !ok {
-                return nil, fmt.Errorf("cnishim req missing K8S_POD_NAMESPACE")
-        }
+	cnishimreq.PodNamespace, ok = cnishimArgs["K8S_POD_NAMESPACE"]
+	if !ok {
+		return nil, fmt.Errorf("cnishim req missing K8S_POD_NAMESPACE")
+	}
 
-        cnishimreq.PodName, ok = cnishimArgs["K8S_POD_NAME"]
+	cnishimreq.PodName, ok = cnishimArgs["K8S_POD_NAME"]
 	if !ok {
 		return nil, fmt.Errorf("cnishim req missing K8S_POD_NAME")
 	}
 
-        netconf, err := config.ConfigureNetConf(r.NetConfig)
-        if err != nil {
-                return nil, fmt.Errorf("cnishim req CNI arg configuration failed:%v",err)
-        }
+	netconf, err := config.ConfigureNetConf(r.NetConfig)
+	if err != nil {
+		return nil, fmt.Errorf("cnishim req CNI arg configuration failed:%v", err)
+	}
 
-        cnishimreq.CNIConf = netconf
+	cnishimreq.CNIConf = netconf
 	return cnishimreq, nil
 }
 
@@ -160,16 +161,16 @@ func (cs *CNIServer) handleCNIShimRequest(w http.ResponseWriter, r *http.Request
 	} else {
 		w.Header().Set("Content-Type", "application/json")
 		if _, err := w.Write(result); err != nil {
-                        klog.Warningf("Error writing %s HTTP response: %v", req.Command, err)
+			klog.Warningf("Error writing %s HTTP response: %v", req.Command, err)
 		}
-        }
+	}
 }
 
 func HandleCNIcommandRequest(request *CNIServerRequest, k8sclient kubernetes.Interface) ([]byte, error) {
-        var result []byte
+	var result []byte
 	var err error
-        klog.Infof("[PodNamespace:%s/PodName:%s] dispatching pod network request %v", request.PodNamespace, request.PodName, request)
-        klog.Infof("k8sclient  %s", fmt.Sprintf("%v",k8sclient))
+	klog.Infof("[PodNamespace:%s/PodName:%s] dispatching pod network request %v", request.PodNamespace, request.PodName, request)
+	klog.Infof("k8sclient  %s", fmt.Sprintf("%v", k8sclient))
 	switch request.Command {
 	case CNIAdd:
 		result, err = request.cmdAdd(k8sclient)
@@ -231,5 +232,5 @@ func (cs *CNIServer) Start(requestFunc cniServerRequestFunc) error {
 			utilruntime.HandleError(fmt.Errorf("CNI server Serve() failed: %v", err))
 		}
 	}, 0)
-        return nil
+	return nil
 }

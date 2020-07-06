@@ -7,7 +7,7 @@ ENV http_proxy $HTTP_PROXY
 ENV https_proxy $HTTPS_PROXY
 ENV no_proxy $NO_PROXY
 
-RUN apt-get update && apt-get install -y -qq apt-transport-https make curl net-tools iproute2 \
+RUN apt-get update && apt-get install -y -qq apt-transport-https make curl net-tools iproute2 iptables \
     wget software-properties-common setpriv dpkg-dev netcat jq
 
 RUN mkdir -p /opt/ovn4nfv-k8s-plugin/dist/ubuntu/deb

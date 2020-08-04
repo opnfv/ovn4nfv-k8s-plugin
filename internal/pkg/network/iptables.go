@@ -9,7 +9,7 @@ import (
 	"github.com/coreos/go-iptables/iptables"
 )
 
-var log = logf.Log.WithName("iptables")
+var log = logf.Log.WithName("network")
 
 type IPTables interface {
 	AppendUnique(table string, chain string, rulespec ...string) error

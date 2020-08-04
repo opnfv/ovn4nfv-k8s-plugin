@@ -19,6 +19,7 @@ package nfn
 import (
 	"context"
 	"fmt"
+	"ovn4nfv-k8s-plugin/internal/pkg/network"
 	"ovn4nfv-k8s-plugin/internal/pkg/ovn"
 	k8sv1alpha1 "ovn4nfv-k8s-plugin/pkg/apis/k8s/v1alpha1"
 	"strings"
@@ -123,6 +124,13 @@ func calculateDeploymentRoutes(namespace, label string, pos int, num int, ln []k
 			r.DynamicNetworkRoutes = append(r.DynamicNetworkRoutes, rt)
 		}
 	}
+
+	//Add Default Route based on Right Network
+	rt := k8sv1alpha1.Route{
+		GW:  nextRightIP,
+		Dst: "0.0.0.0",
+	}
+	r.DynamicNetworkRoutes = append(r.DynamicNetworkRoutes, rt)
 	return
 }
 
@@ -145,6 +153,11 @@ func CalculateRoutes(cr *k8sv1alpha1.NetworkChaining) ([]RoutingInfo, error) {
 		i++
 	}
 	num := len(deploymentList)
+	log.Info("Display the num", "num", num)
+	log.Info("Display the ln", "ln", ln)
+	log.Info("Display the rn", "rn", rn)
+	log.Info("Display the networklist", "networkList", networkList)
+	log.Info("Display the deploymentlist", "deploymentList", deploymentList)
 	for i, deployment := range deploymentList {
 		r, err := calculateDeploymentRoutes(cr.Namespace, deployment, i, num, ln, rn, networkList, deploymentList)
 		if err != nil {
@@ -156,8 +169,13 @@ func CalculateRoutes(cr *k8sv1alpha1.NetworkChaining) ([]RoutingInfo, error) {
 }
 
 func ContainerAddRoute(containerPid int, route []*pb.RouteData) error {
-
 	str := fmt.Sprintf("/host/proc/%d/ns/net", containerPid)
+
+	hostNet, err := network.GetHostNetwork()
+	if err != nil {
+		log.Error(err, "Failed to get host network")
+		return err
+	}
 
 	nms, err := ns.GetNS(str)
 	if err != nil {
@@ -166,13 +184,34 @@ func ContainerAddRoute(containerPid int, route []*pb.RouteData) error {
 	}
 	defer nms.Close()
 	err = nms.Do(func(_ ns.NetNS) error {
+		podGW, err := network.GetDefaultGateway()
+		if err != nil {
+			log.Error(err, "Failed to get pod default gateway")
+			return err
+		}
+
+		stdout, stderr, err := ovn.RunIP("route", "add", hostNet, "via", podGW)
+		if err != nil && !strings.Contains(stderr, "RTNETLINK answers: File exists") {
+			log.Error(err, "Failed to ip route add", "stdout", stdout, "stderr", stderr)
+			return err
+		}
+
 		for _, r := range route {
 			dst := r.GetDst()
 			gw := r.GetGw()
-			stdout, stderr, err := ovn.RunIP("route", "add", dst, "via", gw)
-			if err != nil && !strings.Contains(stderr, "RTNETLINK answers: File exists") {
-				log.Error(err, "Failed to ip route add", "stdout", stdout, "stderr", stderr)
-				return err
+			// Replace default route
+			if dst == "0.0.0.0" {
+				stdout, stderr, err := ovn.RunIP("route", "replace", "default", "via", gw)
+				if err != nil {
+					log.Error(err, "Failed to ip route replace", "stdout", stdout, "stderr", stderr)
+					return err
+				}
+			} else {
+				stdout, stderr, err := ovn.RunIP("route", "add", dst, "via", gw)
+				if err != nil && !strings.Contains(stderr, "RTNETLINK answers: File exists") {
+					log.Error(err, "Failed to ip route add", "stdout", stdout, "stderr", stderr)
+					return err
+				}
 			}
 		}
 		return nil

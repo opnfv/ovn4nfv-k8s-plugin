@@ -24,8 +24,8 @@ import (
 	"os/signal"
 	cs "ovn4nfv-k8s-plugin/internal/pkg/cniserver"
 	pb "ovn4nfv-k8s-plugin/internal/pkg/nfnNotify/proto"
-        chaining "ovn4nfv-k8s-plugin/internal/pkg/utils"
 	"ovn4nfv-k8s-plugin/internal/pkg/ovn"
+	chaining "ovn4nfv-k8s-plugin/internal/pkg/utils"
 	"strings"
 	"syscall"
 	"time"
@@ -286,16 +286,16 @@ func handleNotif(msg *pb.Notification) {
 			}
 
 		case *pb.Notification_InSync:
+			inSyncVlanProvidernetwork()
+			inSyncDirectProvidernetwork()
+			pnCreateStore = nil
+			inSync = true
 			if payload.InSync.GetNodeIntfIpAddress() != "" && payload.InSync.GetNodeIntfMacAddress() != "" {
 				err := createNodeOVSInternalPort(payload)
 				if err != nil {
 					return
 				}
 			}
-			inSyncVlanProvidernetwork()
-			inSyncDirectProvidernetwork()
-			pnCreateStore = nil
-			inSync = true
 
 		}
 	// Add other Types here

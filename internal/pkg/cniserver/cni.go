@@ -107,6 +107,7 @@ func (cr *CNIServerRequest) addMultipleInterfaces(ovnAnnotation, namespace, podN
 	var index int
 	var result *current.Result
 	var dstResult types.Result
+	var isDefaultGW bool
 	for _, ovnNet := range ovnAnnotatedMap {
 		ipAddress := ovnNet["ip_address"]
 		macAddress := ovnNet["mac_address"]
@@ -124,8 +125,23 @@ func (cr *CNIServerRequest) addMultipleInterfaces(ovnAnnotation, namespace, podN
 			klog.Errorf("addMultipleInterfaces: interface can't be null")
 			return nil
 		}
+
+		if interfaceName != "*" && defaultGateway == "true" && isDefaultGW == false {
+			isDefaultGW = true
+		} else if interfaceName != "*" && defaultGateway == "true" {
+			defaultGateway = "false"
+		}
+
+		if interfaceName == "*" && isDefaultGW == true {
+			defaultGateway = "false"
+		}
+
+		if interfaceName == "*" && isDefaultGW == false {
+			defaultGateway = "true"
+		}
+
 		klog.Infof("addMultipleInterfaces: ipAddress %v %v", ipAddress, interfaceName)
-		interfacesArray, err = app.ConfigureInterface(cr.Netns, cr.SandboxID, cr.IfName, namespace, podName, macAddress, ipAddress, gatewayIP, interfaceName, defaultGateway, index, config.Default.MTU)
+		interfacesArray, err = app.ConfigureInterface(cr.Netns, cr.SandboxID, cr.IfName, namespace, podName, macAddress, ipAddress, gatewayIP, interfaceName, defaultGateway, index, config.Default.MTU, isDefaultGW)
 		if err != nil {
 			klog.Errorf("Failed to configure interface in pod: %v", err)
 			return nil

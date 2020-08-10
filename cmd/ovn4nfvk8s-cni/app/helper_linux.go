@@ -8,12 +8,14 @@ import (
 	"os/exec"
 	"ovn4nfv-k8s-plugin/internal/pkg/config"
 	"ovn4nfv-k8s-plugin/internal/pkg/network"
+	"ovn4nfv-k8s-plugin/internal/pkg/ovn"
 	"strconv"
 	"strings"
 
 	"github.com/containernetworking/cni/pkg/types/current"
 	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
+	"github.com/prometheus/common/log"
 	"github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
 )
@@ -96,9 +98,19 @@ func CreateNodeOVSInternalPort(nodeintfipaddr, nodeintfmacaddr, node string) err
 	return nil
 }
 
-func setupInterface(netns ns.NetNS, containerID, ifName, macAddress, ipAddress, gatewayIP, defaultGateway string, idx, mtu int) (*current.Interface, *current.Interface, error) {
+func setupInterface(netns ns.NetNS, containerID, ifName, macAddress, ipAddress, gatewayIP, defaultGateway string, idx, mtu int, isDefaultGW bool) (*current.Interface, *current.Interface, error) {
 	hostIface := &current.Interface{}
 	contIface := &current.Interface{}
+	var hostNet string
+
+	if defaultGateway == "false" && isDefaultGW == true && ifName == "eth0" {
+		var err error
+		hostNet, err = network.GetHostNetwork()
+		if err != nil {
+			log.Error(err, "Failed to get host network")
+			return nil, nil, fmt.Errorf("failed to get host network: %v", err)
+		}
+	}
 
 	var oldHostVethName string
 	err := netns.Do(func(hostNS ns.NetNS) error {
@@ -147,6 +159,15 @@ func setupInterface(netns ns.NetNS, containerID, ifName, macAddress, ipAddress, 
 				return err
 			}
 		}
+
+		if defaultGateway == "false" && isDefaultGW == true && ifName == "eth0" {
+			stdout, stderr, err := ovn.RunIP("route", "add", hostNet, "via", gatewayIP)
+			if err != nil && !strings.Contains(stderr, "RTNETLINK answers: File exists") {
+				logrus.Errorf("Failed to ip route add stout %s, stderr %s, err %v", stdout, stderr, err)
+				return fmt.Errorf("Failed to ip route add stout %s, stderr %s, err %v", stdout, stderr, err)
+			}
+		}
+
 		oldHostVethName = hostVeth.Name
 
 		return nil
@@ -165,7 +186,7 @@ func setupInterface(netns ns.NetNS, containerID, ifName, macAddress, ipAddress, 
 }
 
 // ConfigureInterface sets up the container interface
-var ConfigureInterface = func(containerNetns, containerID, ifName, namespace, podName, macAddress, ipAddress, gatewayIP, interfaceName, defaultGateway string, idx, mtu int) ([]*current.Interface, error) {
+var ConfigureInterface = func(containerNetns, containerID, ifName, namespace, podName, macAddress, ipAddress, gatewayIP, interfaceName, defaultGateway string, idx, mtu int, isDefaultGW bool) ([]*current.Interface, error) {
 	netns, err := ns.GetNS(containerNetns)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open netns %q: %v", containerNetns, err)
@@ -178,9 +199,8 @@ var ConfigureInterface = func(containerNetns, containerID, ifName, namespace, po
 	} else {
 		ifaceID = fmt.Sprintf("%s_%s", namespace, podName)
 		interfaceName = ifName
-		defaultGateway = "true"
 	}
-	hostIface, contIface, err := setupInterface(netns, containerID, interfaceName, macAddress, ipAddress, gatewayIP, defaultGateway, idx, mtu)
+	hostIface, contIface, err := setupInterface(netns, containerID, interfaceName, macAddress, ipAddress, gatewayIP, defaultGateway, idx, mtu, isDefaultGW)
 	if err != nil {
 		return nil, err
 	}

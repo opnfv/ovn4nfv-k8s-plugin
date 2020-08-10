@@ -27,6 +27,24 @@ func GetDefaultGateway() (string, error) {
 	return "", errors.New("Unable to find default route")
 }
 
+//CheckRoute return bool isPresent
+func CheckRoute(dst, gw string) (bool, error) {
+	var isPresent bool
+	routes, err := netlink.RouteList(nil, syscall.AF_INET)
+	if err != nil {
+		return isPresent, err
+	}
+
+	for _, route := range routes {
+		if route.Dst.String() == dst && route.Gw.To4().String() == gw {
+			isPresent = true
+		}
+	}
+
+	return isPresent, nil
+
+}
+
 // GetDefaultGatewayInterface return default gateway interface link
 func GetDefaultGatewayInterface() (*net.Interface, error) {
 	routes, err := netlink.RouteList(nil, syscall.AF_INET)

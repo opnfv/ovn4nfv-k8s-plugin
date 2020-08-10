@@ -63,6 +63,7 @@ type netInterface struct {
 	DefaultGateway string
 	IPAddress      string
 	MacAddress     string
+	GWIPaddress    string
 }
 
 var ovnCtl *Controller
@@ -159,7 +160,7 @@ func (oc *Controller) AddLogicalPorts(pod *kapi.Pod, ovnNetObjs []map[string]int
 			portName = fmt.Sprintf("%s_%s", pod.Namespace, pod.Name)
 			ns.Interface = "*"
 		}
-		outStr = oc.addLogicalPortWithSwitch(pod, ns.Name, ns.IPAddress, ns.MacAddress, portName)
+		outStr = oc.addLogicalPortWithSwitch(pod, ns.Name, ns.IPAddress, ns.MacAddress, ns.GWIPaddress, portName)
 		if outStr == "" {
 			return
 		}
@@ -174,7 +175,7 @@ func (oc *Controller) AddLogicalPorts(pod *kapi.Pod, ovnNetObjs []map[string]int
 	if defaultInterface == false {
 		// Add Default interface
 		portName := fmt.Sprintf("%s_%s", pod.Namespace, pod.Name)
-		outStr = oc.addLogicalPortWithSwitch(pod, Ovn4nfvDefaultNw, "", "", portName)
+		outStr = oc.addLogicalPortWithSwitch(pod, Ovn4nfvDefaultNw, "", "", "", portName)
 		if outStr == "" {
 			return
 		}
@@ -465,7 +466,7 @@ func (oc *Controller) getNodeLogicalPortIPAddr(pod *kapi.Pod) (ipAddress string,
 	return ipAddr, nil
 }
 
-func (oc *Controller) addLogicalPortWithSwitch(pod *kapi.Pod, logicalSwitch, ipAddress, macAddress, portName string) (annotation string) {
+func (oc *Controller) addLogicalPortWithSwitch(pod *kapi.Pod, logicalSwitch, ipAddress, macAddress, gwipAddress, portName string) (annotation string) {
 	var out, stderr string
 	var err error
 	var isStaticIP bool
@@ -552,10 +553,15 @@ func (oc *Controller) addLogicalPortWithSwitch(pod *kapi.Pod, logicalSwitch, ipA
 		return
 	}
 
-	gatewayIP, err := oc.getNodeLogicalPortIPAddr(pod)
-	if err != nil {
-		log.Error(err, "Error obtaining gateway address for switch", "logicalSwitch", logicalSwitch)
-		return
+	var gatewayIP string
+	if gwipAddress != "" {
+		gatewayIP = gwipAddress
+	} else {
+		gatewayIP, err = oc.getNodeLogicalPortIPAddr(pod)
+		if err != nil {
+			log.Error(err, "Error obtaining gateway address for switch", "logicalSwitch", logicalSwitch)
+			return
+		}
 	}
 
 	annotation = fmt.Sprintf(`{\"ip_address\":\"%s/%s\", \"mac_address\":\"%s\", \"gateway_ip\": \"%s\"}`, addresses[1], mask, addresses[0], gatewayIP)

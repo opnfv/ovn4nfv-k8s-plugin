@@ -40,6 +40,7 @@ require (
 	github.com/opencontainers/image-spec v1.0.1 // indirect
 	github.com/phpdave11/gofpdi v1.0.8 // indirect
 	github.com/prometheus/client_golang v0.9.3-0.20190127221311-3c4408c8b829 // indirect
+	github.com/prometheus/common v0.2.0
 	github.com/rogpeppe/go-charset v0.0.0-20190617161244-0dc95cdf6f31 // indirect
 	github.com/safchain/ethtool v0.0.0-20190326074333-42ed695e3de8 // indirect
 	github.com/sirupsen/logrus v1.4.2

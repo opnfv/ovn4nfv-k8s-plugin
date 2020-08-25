@@ -68,6 +68,7 @@ ovn4nfvk8s Plugin
 
 This plugin addresses the below requirements, for networking
 workloads as well typical application workloads
+
 - Multi-interface support
 - Multi-IP address support
 - Dynamic creation of virtual networks
@@ -99,6 +100,7 @@ multiple interfacesbased on the Pod annotations. The code is based on
 ovn-kubernetes_.
 
 NFN-Operator has following functionalities:
+
 1) It watches pods for annotations (see below)
 2) It is a CRD Controller for dynamic networks, provider networks and
    dynamic route creation.
@@ -193,11 +195,11 @@ For building the project:
 
 
 This will output two files nfn-operator, nfn-agent and ovn4nfvk8s-cni which are the plugin/
- operator, gRPC client and CNI binaries respectively.
+operator, gRPC client and CNI binaries respectively.
 
 ovn4nfvk8s-cni requires some configuration at start up.
 
-Example configuration file (default location/etc/openvswitch/ovn4nfv_k8s.conf)
+Example configuration file (default location: /etc/openvswitch/ovn4nfv_k8s.conf)
 
 .. code-block:: yaml
 
@@ -323,4 +325,3 @@ TODO
 
 Addepalli, Srinivasa R <srinivasa.r.addepalli@intel.com>
 Sood, Ritu <ritu.sood@intel.com>
-

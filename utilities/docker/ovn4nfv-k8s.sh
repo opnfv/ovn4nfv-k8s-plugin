@@ -8,6 +8,15 @@ DB_SB_ADDR=${DB_SB_ADDR:-::}
 DB_SB_PORT=${DB_SB_PORT:-6642}
 cmd=${1:-""}
 
+ovn-ctl()
+{
+   if [[ -f /usr/bin/ovn-appctl ]] ; then
+        echo /usr/share/ovn/scripts/ovn-ctl;
+   else
+        echo /usr/share/openvswitch/scripts/ovn-ctl;
+   fi
+}
+
 if [[ -f /usr/bin/ovn-appctl ]] ; then
     # ovn-appctl is present. Use new ovn run dir path.
     OVN_RUNDIR=/var/run/ovn
@@ -23,13 +32,13 @@ else
 fi
 
 check_ovn_control_plane() {
-    /usr/share/ovn/scripts/ovn-ctl status_northd
-    /usr/share/ovn/scripts/ovn-ctl status_ovnnb
-    /usr/share/ovn/scripts/ovn-ctl status_ovnsb
+    $(ovn-ctl) status_northd
+    $(ovn-ctl) status_ovnnb
+    $(ovn-ctl) status_ovnsb
 }
 
 check_ovn_controller() {
-    /usr/share/ovn/scripts/ovn-ctl status_controller
+    $(ovn-ctl) status_controller
 }
 
 # wait for ovn-sb ready
@@ -53,7 +62,7 @@ start_ovs_vswitch() {
     wait_ovn_sb
     function quit {
 	/usr/share/openvswitch/scripts/ovs-ctl stop
-	/usr/share/openvswitch/scripts/ovn-ctl stop_controller
+	$(ovn-ctl) stop_controller
 	exit 0
     }
     trap quit EXIT
@@ -88,34 +97,34 @@ function get_default_inteface_ipaddress {
 
 start_ovn_control_plane() {
     function quit {
-        /usr/share/openvswitch/scripts/ovn-ctl stop_northd
+        $(ovn-ctl) stop_northd
          exit 0
     }
     trap quit EXIT
-    /usr/share/openvswitch/scripts/ovn-ctl restart_northd
+    $(ovn-ctl) restart_northd
     ovn-nbctl set-connection ptcp:"${DB_NB_PORT}":["${DB_NB_ADDR}"]
     ovn-nbctl set Connection . inactivity_probe=0
     ovn-sbctl set-connection ptcp:"${DB_SB_PORT}":["${DB_SB_ADDR}"]
     ovn-sbctl set Connection . inactivity_probe=0
-    tail -f /var/log/openvswitch/ovn-northd.log
+    tail -f ${OVN_LOGDIR}/ovn-northd.log
 }
 
 start_ovn_controller() {
     function quit {
-	/usr/share/openvswitch/scripts/ovn-ctl stop_controller
+	$(ovn-ctl) stop_controller
 	exit 0
     }
     trap quit EXIT
     wait_ovn_sb
     get_default_inteface_ipaddress node_ipv4_address
-    /usr/share/openvswitch/scripts/ovn-ctl restart_controller
+    $(ovn-ctl) restart_controller
     # Set remote ovn-sb for ovn-controller to connect to
     ovs-vsctl set open . external-ids:ovn-remote=tcp:"${OVN_SB_TCP_SERVICE_HOST}":"${OVN_SB_TCP_SERVICE_PORT}"
     ovs-vsctl set open . external-ids:ovn-remote-probe-interval=10000
     ovs-vsctl set open . external-ids:ovn-openflow-probe-interval=180
     ovs-vsctl set open . external-ids:ovn-encap-type=geneve
     ovs-vsctl set open . external-ids:ovn-encap-ip=$node_ipv4_address
-    tail -f /var/log/openvswitch/ovn-controller.log
+    tail -f ${OVN_LOGDIR}/ovn-controller.log
 }
 
 set_nbclt() {

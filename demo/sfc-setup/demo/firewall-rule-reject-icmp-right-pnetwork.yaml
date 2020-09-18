@@ -1,0 +1,13 @@
+apiVersion: batch.sdewan.akraino.org/v1alpha1
+kind: FirewallRule
+metadata:
+  name: firewallrule-icmp-right-pnetwork
+  namespace: default
+  labels:
+    sdewanPurpose: cnf1
+
+spec:
+  src: dynnet2
+  dest: rpnetwork
+  proto: icmp
+  target: REJECT

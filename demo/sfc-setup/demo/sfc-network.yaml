@@ -1,0 +1,67 @@
+apiVersion: k8s.plugin.opnfv.org/v1alpha1
+kind: Network
+metadata:
+  name: dync-net1
+spec:
+  cniType : ovn4nfv
+  ipv4Subnets:
+  - subnet: 172.30.33.0/24
+    name: subnet1
+    gateway: 172.30.33.1/24
+
+---
+
+apiVersion: k8s.plugin.opnfv.org/v1alpha1
+kind: Network
+metadata:
+  name: dync-net2
+spec:
+  cniType : ovn4nfv
+  ipv4Subnets:
+  - subnet: 172.30.44.0/24
+    name: subnet1
+    gateway: 172.30.44.1/24
+
+---
+
+apiVersion: k8s.plugin.opnfv.org/v1alpha1
+kind: ProviderNetwork
+metadata:
+  name: left-pnetwork
+spec:
+  cniType: ovn4nfv
+  ipv4Subnets:
+  - subnet: 172.30.10.0/24
+    name: subnet1
+    gateway: 172.30.10.1/24
+    excludeIps: 172.30.10.2
+  providerNetType: VLAN
+  vlan:
+    vlanId: "100"
+    providerInterfaceName: eth1
+    logicalInterfaceName: eth1.100
+    vlanNodeSelector: specific
+    nodeLabelList:
+    - kubernetes.io/os=linux
+
+---
+
+apiVersion: k8s.plugin.opnfv.org/v1alpha1
+kind: ProviderNetwork
+metadata:
+  name: right-pnetwork
+spec:
+  cniType: ovn4nfv
+  ipv4Subnets:
+  - subnet: 172.30.20.0/24
+    name: subnet1
+    gateway: 172.30.20.1/24
+    excludeIps: 172.30.20.2
+  providerNetType: VLAN
+  vlan:
+    vlanId: "200"
+    providerInterfaceName: eth1
+    logicalInterfaceName: eth1.200
+    vlanNodeSelector: specific
+    nodeLabelList:
+    - kubernetes.io/os=linux

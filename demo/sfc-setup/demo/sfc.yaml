@@ -1,0 +1,18 @@
+apiVersion: k8s.plugin.opnfv.org/v1alpha1
+kind: NetworkChaining
+metadata:
+  name: example-networkchaining
+spec:
+  # Add fields here
+  chainType: "Routing"
+  routingSpec:
+    namespace: "default"
+    networkChain: "app=slb,dync-net1,app=ngfw,dync-net2,app=sdwan"
+    leftNetwork:
+    - networkName: "right-pnetwork"
+      gatewayIp: "172.30.10.2"
+      subnet: "172.30.10.0/24"
+    rightNetwork:
+    - networkName: "left-pnetwork"
+      gatewayIp: "172.30.20.2"
+      subnet: "172.30.20.0/24"

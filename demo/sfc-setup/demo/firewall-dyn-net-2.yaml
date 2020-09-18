@@ -1,0 +1,14 @@
+apiVersion: batch.sdewan.akraino.org/v1alpha1
+kind: FirewallZone
+metadata:
+  name: dynnet2
+  namespace: default
+  labels:
+    sdewanPurpose: cnf1
+
+spec:
+  network:
+    - dync-net2
+  input: ACCEPT
+  output: ACCEPT
+  forward: ACCEPT

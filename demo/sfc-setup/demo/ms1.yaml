@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ms1
+  labels:
+    app: ms1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ms1
+  template:
+    metadata:
+      labels:
+        app: ms1
+      annotations:
+        k8s.plugin.opnfv.org/nfn-network: '{ "type": "ovn4nfv", "interface": [{ "name": "left-pnetwork", "interface": "net0", "defaultgateway": "true", "gwipaddress": "172.30.10.3" }]}'
+
+    spec:
+      containers:
+      - name: ms1
+        image: rkamudhan/netshoot:v1.0
+        imagePullPolicy: IfNotPresent
+        stdin: true
+        tty: true
+        securityContext:
+          privileged: true
+          capabilities:
+            add: ["NET_ADMIN"]
+      dnsPolicy: "None"
+      dnsConfig:
+        nameservers:
+          - 8.8.8.8
+        searches:
+          - default.svc.cluster.local
+          - svc.cluster.local
+          - cluster.local
+        options:
+          - name: ndots
+            value: "5"

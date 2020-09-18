@@ -1,0 +1,30 @@
+---
+# SPDX-license-identifier: Apache-2.0
+##############################################################################
+# Copyright (c) 2018
+# All rights reserved. This program and the accompanying materials
+# are made available under the terms of the Apache License, Version 2.0
+# which accompanies this distribution, and is available at
+# http://www.apache.org/licenses/LICENSE-2.0
+##############################################################################
+
+- name: "master"
+  ip: "10.10.10.13"
+  memory: 16384
+  cpus: 16
+- name: "minion01"
+  ip: "10.10.10.14"
+  memory: 18432
+  cpus: 16
+- name: "minion02"
+  ip: "10.10.10.15"
+  memory: 18432
+  cpus: 16
+- name: "tm1-node"
+  ip: "10.10.10.16"
+  memory: 512
+  cpus: 2
+- name: "tm2-node"
+  ip: "10.10.10.17"
+  memory: 512
+  cpus: 2

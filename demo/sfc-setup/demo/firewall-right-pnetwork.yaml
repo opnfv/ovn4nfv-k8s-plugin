@@ -1,0 +1,16 @@
+apiVersion: batch.sdewan.akraino.org/v1alpha1
+kind: FirewallZone
+metadata:
+  name: rpnetwork
+  namespace: default
+  labels:
+    sdewanPurpose: cnf1
+
+spec:
+  network:
+    - right-pnetwork
+  input: ACCEPT
+  output: ACCEPT
+  forward: ACCEPT
+  masq: "0"
+  mtu_fix: "1"

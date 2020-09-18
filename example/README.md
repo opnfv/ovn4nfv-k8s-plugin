@@ -107,7 +107,7 @@ PING 172.16.33.3 (172.16.33.3) from 172.16.33.2 eth0.100: 56(84) bytes of data.
 rtt min/avg/max/mdev = 0.347/0.364/0.382/0.025 ms
 ```
 ## VLAN Tagging between VMs
-![vlan tagging testing](images/vlan-tagging.png)
+![vlan tagging testing](../images/vlan-tagging.png)
 
 # Direct Provider network testing
 
@@ -191,7 +191,7 @@ PING 172.16.34.2 (172.16.34.2) from 172.16.34.2 eth0.101: 56(84) bytes of data.
 rtt min/avg/max/mdev = 0.057/0.061/0.065/0.004 ms
 ```
 ## Direct provider networking between VMs
-![Direct provider network testing](images/direct-provider-networking.png)
+![Direct provider network testing](../images/direct-provider-networking.png)
 
 # Summary
 

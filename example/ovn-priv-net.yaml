@@ -1,0 +1,10 @@
+apiVersion: k8s.plugin.opnfv.org/v1alpha1
+kind: Network
+metadata:
+  name: ovn-priv-net
+spec:
+  cniType : ovn4nfv
+  ipv4Subnets:
+  - subnet: 172.16.44.0/24
+    name: subnet1
+    gateway: 172.16.44.1/24

@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ovn4nfv-deployment-noannotation
+  labels:
+    app: ovn4nfv-noannotation
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ovn4nfv-noannotation
+  template:
+    metadata:
+      labels:
+        app: ovn4nfv-noannotation
+    spec:
+      containers:
+      - name: ovn4nfv-deployment-noannotation
+        image: "busybox"
+        command: ["top"]
+        stdin: true
+        tty: true

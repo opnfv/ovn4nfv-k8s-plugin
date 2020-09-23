@@ -85,23 +85,24 @@ Deploy the SDEWAN controller in cluster
    $ kubectl apply -f examples/sdewan-controller.yaml
 ```
 From TM1 try to ping google.com, the ping operation will fails.
+
 Deploy the SFC as following
 ```
-   $ kubectl apply -f sfc-network.yaml
-   $ kubectl apply -f slb-ngfw-sdewan-cnf-deployment.yaml
-   $ kubectl apply -f ms1.yaml
+   $ kubectl apply -f demo/sfc-setup/deploy/sfc-network.yaml
+   $ kubectl apply -f demo/sfc-setup/deploy/slb-ngfw-sdewan-cnf-deployment.yaml
+   $ kubectl apply -f demo/sfc-setup/deploy/ms1.yaml
 ```
 Pinging for goole.com or curl example.com should fail in both ms1 and TM1
 ```
-   $ kubectl apply -f sfc.yaml
+   $ kubectl apply -f demo/sfc-setup/deploy/sfc.yaml
 ```
 Pinging for google.com or curl example.com should be successful in both ms1 and TM1
 
 Let try to apply icmp reject rule in SDEWAN cnf
 ```
-   $ kubectl apply -f firewall-dyn-net-2.yaml
-   $ kubectl apply -f firewall-right-pnetwork.yaml
-   $ kubectl apply -f firewall-rule-reject-icmp-right-pnetwork.yaml
+   $ kubectl apply -f demo/sfc-setup/deploy/firewall-dyn-net-2.yaml
+   $ kubectl apply -f demo/sfc-setup/deploy/firewall-right-pnetwork.yaml
+   $ kubectl apply -f demo/sfc-setup/deploy/firewall-rule-reject-icmp-right-pnetwork.yaml
 ```
 Pinging for google.com will fail and curl example.com should be successful in both ms1 and TM1
 
@@ -111,3 +112,4 @@ Apache-2.0
 
 [1]: https://www.vagrantup.com/
 [2]: https://www.vagrantup.com/docs/cli/
+[3]: https://www.github.com/akraino-edge-stack/icn-sdwan

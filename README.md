@@ -61,6 +61,12 @@ In the master node run the `kubeadm init` as below. The ovn4nfv uses pod network
 ```
     $ kubeadm init --kubernetes-version=1.19.0 --pod-network-cidr=10.233.64.0/18 --apiserver-advertise-address=<master_eth0_ip_address>
 ```
+Ensure the master node taint for no schedule is removed and labelled with `ovn4nfv-k8s-plugin=ovn-control-plane`
+```
+nodename=$(kubectl get node -o jsonpath='{.items[0].metadata.name}')
+kubectl taint node $nodename node-role.kubernetes.io/master:NoSchedule-
+kubectl label --overwrite node $nodename ovn4nfv-k8s-plugin=ovn-control-plane
+```
 Deploy the ovn4nfv Pod network to the cluster.
 ```
     $ kubectl apply -f deploy/ovn-daemonset.yaml

@@ -28,20 +28,14 @@ is available on the Vagrant site.
 
 ## Deployment
 
-### kubeadm
+### How to create K8s cluster?
 
 Install the [docker](https://docs.docker.com/engine/install/ubuntu/) in the master, minion01 and minion02 vm.
 Follow the steps in [create cluster kubeadm](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/) to create kubernetes cluster in master
-In the master vm run the `kubeadm init` as below. The ovn4nfv uses same pod network cidr `10.233.64.0/18`
-```
-    $ kubeadm init --kubernetes-version=1.19.0 --pod-network-cidr=10.233.64.0/18 --apiserver-advertise-address=<master_eth0_ip_address>
-```
-Deploy the ovn4nfv Pod network to the cluster.
-```
-    $ kubectl apply -f ovn4nfv-pod-network/ovn-daemonset.yaml
-    $ kubectl apply -f ovn4nfv-pod-network/ovn4nfv-k8s-plugin.yaml
-```
+In the master vm run the `kubeadm init` as below. The ovn4nfv uses same pod network cidr `10.233.64.0/18`. 
 Join minion01 and minion02 by running the `kubeadm join` on each node as root as mentioned in [create cluster kubeadm](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/)
+
+Please follow the ovn4nfv installation steps - [ovn4nfv installation](https://github.com/ovn4nfv/ovn4nfv-k8s-plugin#quickstart-installation-guide)
 
 ### TM1 server
 

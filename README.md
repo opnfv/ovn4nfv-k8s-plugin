@@ -38,7 +38,7 @@ OVN control plane and OVN controller take care of OVN configuration and installa
 ### Networks traffice between pods
 ![ovn4nfv network traffic](./images/ovn4nfv-network-traffic.png)
 
-ovn4nfv-default-nw is the default logic switch create for the default networking in kubernetes pod network for cidr 10.244.64.0/18. Both node and pod in the kubernetes cluster share the same ipam information.
+ovn4nfv-default-nw is the default logic switch create for the default networking in kubernetes pod network for cidr 10.233.64.0/18. Both node and pod in the kubernetes cluster share the same ipam information.
 
 ### Service Function Chaining Demo
 ![sfc-with-sdewan](./images/sfc-with-sdewan.png)
@@ -57,9 +57,9 @@ OVN4NFV SFC currently support all 3 follows. The detailed demo is include [demo/
 
 Install the [docker](https://docs.docker.com/engine/install/ubuntu/) in the Kubernetes cluster node.
 Follow the steps in [create cluster kubeadm](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/) to create kubernetes cluster in master
-In the master node run the `kubeadm init` as below. The ovn4nfv uses pod network cidr `10.244.64.0/18`
+In the master node run the `kubeadm init` as below. The ovn4nfv uses pod network cidr `10.233.64.0/18`
 ```
-    $ kubeadm init --kubernetes-version=1.19.0 --pod-network-cidr=10.244.64.0/18 --apiserver-advertise-address=<master_eth0_ip_address>
+    $ kubeadm init --kubernetes-version=1.19.0 --pod-network-cidr=10.233.64.0/18 --apiserver-advertise-address=<master_eth0_ip_address>
 ```
 Deploy the ovn4nfv Pod network to the cluster.
 ```

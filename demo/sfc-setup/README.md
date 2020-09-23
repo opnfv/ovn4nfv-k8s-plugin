@@ -32,9 +32,9 @@ is available on the Vagrant site.
 
 Install the [docker](https://docs.docker.com/engine/install/ubuntu/) in the master, minion01 and minion02 vm.
 Follow the steps in [create cluster kubeadm](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/) to create kubernetes cluster in master
-In the master vm run the `kubeadm init` as below. The ovn4nfv uses same pod network cidr `10.244.64.0/18`
+In the master vm run the `kubeadm init` as below. The ovn4nfv uses same pod network cidr `10.233.64.0/18`
 ```
-    $ kubeadm init --kubernetes-version=1.19.0 --pod-network-cidr=10.244.64.0/18 --apiserver-advertise-address=<master_eth0_ip_address>
+    $ kubeadm init --kubernetes-version=1.19.0 --pod-network-cidr=10.233.64.0/18 --apiserver-advertise-address=<master_eth0_ip_address>
 ```
 Deploy the ovn4nfv Pod network to the cluster.
 ```

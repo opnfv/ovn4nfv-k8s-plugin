@@ -70,7 +70,7 @@ spec:
       hostNetwork: true
       containers:
         - name: ovn-control-plane
-          image: docker.io/integratedcloudnative/ovn-images:v2.0.0
+          image: docker.io/integratedcloudnative/ovn-images:centos-v2.0.0
           imagePullPolicy: IfNotPresent
           command: ["ovn4nfv-k8s", "start_ovn_control_plane"]
           securityContext:
@@ -112,7 +112,7 @@ spec:
               command: ["ovn4nfv-k8s", "check_ovn_control_plane"]
             periodSeconds: 3
           livenessProbe:
-            exec: 
+            exec:
               command: ["ovn4nfv-k8s", "check_ovn_control_plane"]
             initialDelaySeconds: 30
             periodSeconds: 7
@@ -168,7 +168,7 @@ spec:
       hostPID: true
       containers:
         - name: ovn-controller
-          image: docker.io/integratedcloudnative/ovn-images:v2.0.0
+          image: docker.io/integratedcloudnative/ovn-images:centos-v2.0.0
           imagePullPolicy: IfNotPresent
           command: ["ovn4nfv-k8s", "start_ovn_controller"]
           securityContext:

@@ -92,11 +92,22 @@ Deploy the SFC as following
    $ kubectl apply -f demo/sfc-setup/deploy/slb-ngfw-sdewan-cnf-deployment.yaml
    $ kubectl apply -f demo/sfc-setup/deploy/ms1.yaml
 ```
+## Test Scenario - to comprehend multiple deployment variations
+![sfc-test-scenario-diagram](../../images/sfc-test-scenario-diagram.png)
+
+This show the test scenario we created in this demo.
+
 Pinging for goole.com or curl example.com should fail in both ms1 and TM1
 ```
    $ kubectl apply -f demo/sfc-setup/deploy/sfc.yaml
 ```
 Pinging for google.com or curl example.com should be successful in both ms1 and TM1
+
+## Traffic from external entities with sfc
+![sfc-test-scenario-tm1-to-internet](../../images/sfc-test-scenario-tm1-to-internet.png)
+
+## Traffic from pod within the cluster with sfc
+![sfc-test-scenario-ms1-to-internet](../../images/sfc-test-scenario-ms1-to-internet.png)
 
 Let try to apply icmp reject rule in SDEWAN cnf
 ```
@@ -104,6 +115,12 @@ Let try to apply icmp reject rule in SDEWAN cnf
    $ kubectl apply -f demo/sfc-setup/deploy/firewall-right-pnetwork.yaml
    $ kubectl apply -f demo/sfc-setup/deploy/firewall-rule-reject-icmp-right-pnetwork.yaml
 ```
+## Traffic from external entities with sfc - SDEWAN icmp reject
+![sfc-test-scenario-tm1-icmp-blocked](../../images/sfc-test-scenario-tm1-icmp-blocked.png)
+
+## Traffic from pod within the cluster with sfc - SDEWAN icmp reject
+![sfc-test-scenario-ms1-icmp-blocked](../../images/sfc-test-scenario-ms1-icmp-blocked.png)
+
 Pinging for google.com will fail and curl example.com should be successful in both ms1 and TM1
 
 ## License

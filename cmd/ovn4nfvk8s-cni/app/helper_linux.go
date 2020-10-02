@@ -229,6 +229,10 @@ func setupRoute(netns ns.NetNS, dst, gw, dev string) error {
 		dstAddr, dstAddrNet, _ := net.ParseCIDR(dst)
 		ipNet := net.IPNet{IP: dstAddr, Mask: dstAddrNet.Mask}
 		link, err := netlink.LinkByName(dev)
+		if err != nil {
+			logrus.Errorf("netlink.LinkByName failed %v dev %v", err, dev)
+			return err
+		}
 		err = ip.AddRoute(&ipNet, net.ParseIP(gw), link)
 		if err != nil {
 			logrus.Errorf("ip.AddRoute failed %v dst %v gw %v", err, dst, gw)

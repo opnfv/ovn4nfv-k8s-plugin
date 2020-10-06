@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ovn4nfv-deployment-with-multus-annotation-sandbox
+  labels:
+    app: ovn4nfv-with-multus-annotation-sandbox
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ovn4nfv-with-multus-annotation-sandbox
+  template:
+    metadata:
+      labels:
+        app: ovn4nfv-with-multus-annotation-sandbox
+      annotations:
+        k8s.v1.cni.cncf.io/networks: ovn4nfv-k8s-plugin
+    spec:
+      containers:
+      - name: ovn4nfv-deployment-with-multus-annotation-sandbox
+        image: "busybox"
+        command: ["top"]
+        stdin: true
+        tty: true

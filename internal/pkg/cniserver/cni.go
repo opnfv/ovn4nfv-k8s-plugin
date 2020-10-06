@@ -140,7 +140,11 @@ func (cr *CNIServerRequest) addMultipleInterfaces(ovnAnnotation, namespace, podN
 			defaultGateway = "true"
 		}
 
-		klog.Infof("addMultipleInterfaces: ipAddress %v %v", ipAddress, interfaceName)
+		if interfaceName == "*" && cr.IfName != "eth0" {
+			defaultGateway = "false"
+		}
+
+		klog.Infof("addMultipleInterfaces: ipAddress-%v ovn4nfv-interface-%v cni-ifname-%v", ipAddress, interfaceName, cr.IfName)
 		interfacesArray, err = app.ConfigureInterface(cr.Netns, cr.SandboxID, cr.IfName, namespace, podName, macAddress, ipAddress, gatewayIP, interfaceName, defaultGateway, index, config.Default.MTU, isDefaultGW)
 		if err != nil {
 			klog.Errorf("Failed to configure interface in pod: %v", err)

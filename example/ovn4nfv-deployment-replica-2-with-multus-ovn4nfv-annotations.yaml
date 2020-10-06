@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ovn4nfv-deployment-2-annotation
+  labels:
+    app: ovn4nfv-2-annotation
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ovn4nfv-2-annotation
+  template:
+    metadata:
+      labels:
+        app: ovn4nfv-2-annotation
+      annotations:
+        k8s.v1.cni.cncf.io/networks: '[
+            { "name": "ovn4nfv-k8s-plugin",
+              "interface": "net1"
+            }]'
+        k8s.v1.cni.cncf.io/networks: ovn4nfv-k8s-plugin
+        k8s.plugin.opnfv.org/nfn-network: '{ "type": "ovn4nfv", "interface": [{ "name": "ovn-port-net", "interface": "net2" , "defaultGateway": "false"},
+                      { "name": "ovn-priv-net", "interface": "net3" , "defaultGateway": "false"}]}'
+    spec:
+      containers:
+      - name: ovn4nfv-deployment-2-annotation
+        image: "busybox"
+        command: ["top"]
+        stdin: true
+        tty: true

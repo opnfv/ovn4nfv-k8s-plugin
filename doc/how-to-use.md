@@ -415,6 +415,209 @@ rtt min/avg/max/mdev = 0.057/0.061/0.065/0.004 ms
 ### Direct provider networking between VMs
 ![Direct provider network testing](../images/direct-provider-networking.png)
 
+## Testing with CNI Proxy
+There are multi CNI Proxy plugins such as Multus, DAMN and CNI-Genie. In this testing, we are testing with Multus CNI and Calico CNI
+### kubeadm
+Install the [docker](https://docs.docker.com/engine/install/ubuntu/) in the Kubernetes cluster node.
+Follow the steps in [create cluster kubeadm](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/) to create kubernetes cluster in master
+In the master node run the `kubeadm init` as below. The calico uses pod network cidr `10.233.64.0/18`
+```
+    $ kubeadm init --kubernetes-version=1.19.0 --pod-network-cidr=10.233.64.0/18 --apiserver-advertise-address=<master_eth0_ip_address>
+```
+Ensure the master node taint for no schedule is removed and labelled with `ovn4nfv-k8s-plugin=ovn-control-plane`
+```
+nodename=$(kubectl get node -o jsonpath='{.items[0].metadata.name}')
+kubectl taint node $nodename node-role.kubernetes.io/master:NoSchedule-
+kubectl label --overwrite node $nodename ovn4nfv-k8s-plugin=ovn-control-plane
+```
+Deploy the Calico and Multus CNI in the kubeadm master
+```
+     $ kubectl apply -f deploy/calico.yaml
+     $ kubectl apply -f deploy/multus-daemonset.yaml
+```
+Rename the `/opt/cni/net.d/70-multus.conf` to `/opt/cni/net.d/00-multus.conf` . There will be multiple conf files, we have to make sure Multus file is in the Lexicographic order.
+Kubernetes kubelet is designed to pick the config file in the lexicograpchic order.
+
+In this example, we are using pod CIDR as `10.233.64.0/18`. The Calico will automatically detect the CIDR based on the running configuration.
+Since calico network going to the primary network in our case, ovn4nfv subnet should be a different network. Make sure you change the `OVN_SUBNET` and `OVN_GATEWAYIP` in `deploy/ovn4nfv-k8s-plugin.yaml`
+In this example, we customize the ovn network as follows.
+```
+data:
+  OVN_SUBNET: "10.154.142.0/18"
+  OVN_GATEWAYIP: "10.154.142.1/18"
+```
+Deploy the ovn4nfv Pod network to the cluster.
+```
+    $ kubectl apply -f deploy/ovn-daemonset.yaml
+    $ kubectl apply -f deploy/ovn4nfv-k8s-plugin.yaml
+```
+Join worker node by running the `kubeadm join` on each node as root as mentioned in [create cluster kubeadm](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/).
+Also make sure to rename the the `/opt/cni/net.d/70-multus.conf` to `/opt/cni/net.d/00-multus.conf` in all nodes.
+
+### Test the Multiple Network Setup with Multus
+Create a network attachment definition as mentioned in the [multi-net-spec](https://github.com/k8snetworkplumbingwg/multi-net-spec)
+```
+# kubectl create -f example/multus-net-attach-def-cr.yaml
+networkattachmentdefinition.k8s.cni.cncf.io/ovn4nfv-k8s-plugin created
+# kubectl get net-attach-def
+NAME                 AGE
+ovn4nfv-k8s-plugin   9s
+```
+
+Let check the multiple interface created from OVN4NFV and Calico
+```
+# kubectl create -f example/ovn4nfv-deployment-with-multus-annotation-sandbox.yaml
+deployment.apps/ovn4nfv-deployment-with-multus-annotation-sandbox created
+root@master:/mnt/sharedclient/calico-deployment/ovn4nfv-k8s-plugin# kubectl get pods
+NAME                                                              READY   STATUS    RESTARTS   AGE
+ovn4nfv-deployment-with-multus-annotation-sandbox-fc67cd79nkmtt   1/1     Running   0          9s
+# kubectl exec -it ovn4nfv-deployment-with-multus-annotation-sandbox-fc67cd79nkmtt -- ifconfig
+eth0      Link encap:Ethernet  HWaddr 6E:50:ED:86:B6:B3
+          inet addr:10.233.104.79  Bcast:10.233.104.79  Mask:255.255.255.255
+          UP BROADCAST RUNNING MULTICAST  MTU:1440  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+lo        Link encap:Local Loopback
+          inet addr:127.0.0.1  Mask:255.0.0.0
+          UP LOOPBACK RUNNING  MTU:65536  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+net1      Link encap:Ethernet  HWaddr 7E:9C:C7:9A:8E:0D
+          inet addr:10.154.142.12  Bcast:10.154.191.255  Mask:255.255.192.0
+          UP BROADCAST RUNNING MULTICAST  MTU:1400  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+```
+Let check the OVN4NFV Multi-networking along with Multus
+
+Create two ovn networks ovn-priv-net and ovn-port-net
+
+```
+# kubectl apply -f example/ovn-priv-net.yaml
+network.k8s.plugin.opnfv.org/ovn-priv-net created
+# kubectl apply -f example/ovn-port-net.yaml
+network.k8s.plugin.opnfv.org/ovn-port-net created
+
+# kubectl get crds
+NAME                                    CREATED AT
+networkchainings.k8s.plugin.opnfv.org   2020-09-21T19:29:50Z
+networks.k8s.plugin.opnfv.org           2020-09-21T19:29:50Z
+providernetworks.k8s.plugin.opnfv.org   2020-09-21T19:29:50Z
+
+# kubectl get networks
+NAME           AGE
+ovn-port-net   32s
+ovn-priv-net   39s
+```
+
+Use the network `ovn-port-net` and `ovn-priv-net` for the multiple network creation
+and test the network connectivity between the pods
+
+```
+# kubectl apply -f example/ovn4nfv-deployment-replica-2-with-multus-ovn4nfv-annotations.yaml
+deployment.apps/ovn4nfv-deployment-2-annotation created
+root@master:/mnt/sharedclient/calico-deployment/ovn4nfv-k8s-plugin# kubectl get pods
+NAME                                                              READY   STATUS    RESTARTS   AGE
+ovn4nfv-deployment-2-annotation-6df775649f-hpfmk                  1/1     Running   0          17s
+ovn4nfv-deployment-2-annotation-6df775649f-p5kzt                  1/1     Running   0          17s
+# kubectl exec -it ovn4nfv-deployment-2-annotation-6df775649f-hpfmk -- ifconfig
+eth0      Link encap:Ethernet  HWaddr 6A:83:3A:F3:18:77
+          inet addr:10.233.104.198  Bcast:10.233.104.198  Mask:255.255.255.255
+          UP BROADCAST RUNNING MULTICAST  MTU:1440  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+lo        Link encap:Local Loopback
+          inet addr:127.0.0.1  Mask:255.0.0.0
+          UP LOOPBACK RUNNING  MTU:65536  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+net1      Link encap:Ethernet  HWaddr 7E:9C:C7:9A:8E:0F
+          inet addr:10.154.142.14  Bcast:10.154.191.255  Mask:255.255.192.0
+          UP BROADCAST RUNNING MULTICAST  MTU:1400  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+net2      Link encap:Ethernet  HWaddr 7E:9C:C7:10:21:04
+          inet addr:172.16.33.3  Bcast:172.16.33.255  Mask:255.255.255.0
+          UP BROADCAST RUNNING MULTICAST  MTU:1400  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+net3      Link encap:Ethernet  HWaddr 7E:9C:C7:10:2C:04
+          inet addr:172.16.44.3  Bcast:172.16.44.255  Mask:255.255.255.0
+          UP BROADCAST RUNNING MULTICAST  MTU:1400  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+# kubectl exec -it ovn4nfv-deployment-2-annotation-6df775649f-p5kzt -- ifconfig
+eth0      Link encap:Ethernet  HWaddr 4E:AD:F5:8D:3C:EE
+          inet addr:10.233.104.80  Bcast:10.233.104.80  Mask:255.255.255.255
+          UP BROADCAST RUNNING MULTICAST  MTU:1440  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+lo        Link encap:Local Loopback
+          inet addr:127.0.0.1  Mask:255.0.0.0
+          UP LOOPBACK RUNNING  MTU:65536  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+net1      Link encap:Ethernet  HWaddr 7E:9C:C7:9A:8E:0E
+          inet addr:10.154.142.13  Bcast:10.154.191.255  Mask:255.255.192.0
+          UP BROADCAST RUNNING MULTICAST  MTU:1400  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+net2      Link encap:Ethernet  HWaddr 7E:9C:C7:10:21:03
+          inet addr:172.16.33.2  Bcast:172.16.33.255  Mask:255.255.255.0
+          UP BROADCAST RUNNING MULTICAST  MTU:1400  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+net3      Link encap:Ethernet  HWaddr 7E:9C:C7:10:2C:03
+          inet addr:172.16.44.2  Bcast:172.16.44.255  Mask:255.255.255.0
+          UP BROADCAST RUNNING MULTICAST  MTU:1400  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+# kubectl exec -it ovn4nfv-deployment-2-annotation-6df775649f-p5kzt -- ping 172.16.44.3 -c 1
+PING 172.16.44.3 (172.16.44.3): 56 data bytes
+64 bytes from 172.16.44.3: seq=0 ttl=64 time=3.001 ms
+
+--- 172.16.44.3 ping statistics ---
+1 packets transmitted, 1 packets received, 0% packet loss
+round-trip min/avg/max = 3.001/3.001/3.001 ms
+```
 # Summary
 
 This is only the test scenario for development and also for verification purpose. Work in progress to make the end2end testing
